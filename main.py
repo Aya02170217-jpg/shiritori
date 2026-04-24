@@ -42,6 +42,9 @@ async def handle_index(request):
     except FileNotFoundError:
         return web.Response(text="index.htmlが見つかりません。ファイル名を確認してください。", status=404)
 
+async def handle_check(request):
+    return web.Response(text="OK")
+
 async def start_server():
     app = web.Application()
     app.router.add_get('/', handle_index)  # ←これを追加しました（トップ画面用）
