@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>お絵描きしりとりキャンバス</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #36393f; color: white; }
+        canvas { border: 2px solid #ffffff; background: white; cursor: crosshair; touch-action: none; border-radius: 8px; }
+        .controls { margin: 20px; display: flex; gap: 10px; flex-direction: column; align-items: center; }
+        input { padding: 10px; border-radius: 5px; border: none; width: 250px; }
+        button { padding: 10px 20px; border-radius: 5px; border: none; background: #5865f2; color: white; font-weight: bold; cursor: pointer; }
+        button:hover { background: #4752c4; }
+        .clear-btn { background: #ed4245; }
+    </style>
+</head>
+<body>
+    <h2>🎨 お絵描きしりとり</h2>
+    <canvas id="paintCanvas" width="400" height="400"></canvas>
+    
+    <div class="controls">
+        <input type="text" id="answerInput" placeholder="答えをひらがなで入力（例：りんご）">
+        <div style="display: flex; gap: 10px;">
+            <button class="clear-btn" onclick="clearCanvas()">やり直し</button>
+            <button onclick="sendDrawing()">送信！</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('paintCanvas');
+        const ctx = canvas.getContext('2d');
+        let painting = false;
+
+        // お絵描きの設定
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'black';
+
+        function startPosition(e) { painting = true; draw(e); }
+        function finishedPosition() { painting = false; ctx.beginPath(); }
+        function draw(e) {
+            if (!painting) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX || e.touches[0].clientX) - rect.left;
+            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+
+        canvas.addEventListener('mousedown', startPosition);
+        canvas.addEventListener('mouseup', finishedPosition);
+        canvas.addEventListener('mousemove', draw);
+        // スマホ用
+        canvas.addEventListener('touchstart', startPosition);
+        canvas.addEventListener('touchend', finishedPosition);
+        canvas.addEventListener('touchmove', draw);
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function sendDrawing() {
+            const answer = document.getElementById('answerInput').value;
+            if (!answer) {
+                alert("答えを入力してね！");
+                return;
+            }
+            // ここで画像をデータ化する
+            const dataURL = canvas.toDataURL();
+            console.log("送信された答え:", answer);
+            console.log("画像データ(Base64):", dataURL);
+            alert(answer + " を送信しました！（今はテストなのでログに出るだけだよ）");
+        }
+    </script>
+</body>
+</html>
