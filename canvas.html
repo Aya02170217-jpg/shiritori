@@ -23,10 +23,13 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 <div id="setupArea">
 <div class="rule-box">
 <b style="color: #faa61a;">【しりとりルール】</b><br>
-<b style="color: #ff4747;">・「挑戦中」は5分間で解除されます</b><br>
+・お絵描きの制限時間は5分です<br>
 ・ひらがなだけで入力してね！<br>
 ・「ー」で終わる時は、その前の文字からスタート！<br>
-・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね
+　（例：かれー → れ）<br>
+・「ゃ・ゅ・ょ・っ」等の小文字は、大きい文字になるよ！<br>
+・答えが複数ある時は<b style="color: #ff4747;">全隔スペース</b>を空けてね<br>
+　（例：どーなつ　どーなっつ）
 </div>
 <input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
 <br>
@@ -44,6 +47,7 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 </div>
 
 <script>
+// --- 基本設定の読み込み ---
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const urlParams = new URLSearchParams(window.location.search);
@@ -55,9 +59,59 @@ const userId = urlParams.get('userId') || "0";
 const userName = urlParams.get('user') || "ななし";
 const currentTurn = urlParams.get('turn') || "0";
 
+// タイトル表示（ここで「読み込み中...」が消えます）
 document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
 
-// 5分タイマー
+// --- ABガード機能：挑戦権を確認してロックする ---
+async function checkAndLock() {
+    const rawVal = document.getElementById('answerInput').value.trim();
+    if (!rawVal) return alert("答えを入力してね！");
+
+    // バリデーション（元の機能を維持）
+    const answers = rawVal.split('　');
+    for (const val of answers) {
+        if (!val) continue;
+        if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがなだけで入力してね！");
+        if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
+        if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
+        if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
+    }
+
+    const btn = document.getElementById('lockBtn');
+    btn.disabled = true;
+    btn.innerText = "挑戦権を確認中...";
+
+    try {
+        // Botに「今から私が描きます」と合図を送る（答えはチャットに出さない設定）
+        const res = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content: JSON.stringify({
+                    type: "try_lock",
+                    userId: userId,
+                    userName: userName,
+                    ans: rawVal
+                })
+            })
+        });
+
+        if (res.ok) {
+            // 成功したらキャンバスを表示してタイマー開始
+            document.getElementById('setupArea').style.display = "none";
+            document.getElementById('drawArea').style.display = "block";
+            canvas.style.display = "inline-block";
+            ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, 400, 400);
+            startTimer();
+        }
+    } catch (e) {
+        alert("通信エラーが発生しました。");
+        btn.disabled = false;
+        btn.innerText = "この言葉で描く！";
+    }
+}
+
+// --- 5分タイマー ---
 let timeLeft = 300;
 function startTimer() {
     document.getElementById('timerDisplay').style.display = "block";
@@ -74,56 +128,50 @@ function startTimer() {
     }, 1000);
 }
 
-async function checkAndLock() {
-    const rawVal = document.getElementById('answerInput').value.trim();
-    if (!rawVal) return alert("答えを入力してね！");
-
-    const answers = rawVal.split('　');
-    for (const val of answers) {
-        if (!val) continue;
-        if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（または全角スペース）だけで入力してね！");
-        if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
-        if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
-        if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
-    }
-
-    const btn = document.getElementById('lockBtn');
-    btn.disabled = true;
-    btn.innerText = "挑戦権を確認中...";
-
-    try {
-        // Botに挑戦申請を送る (答えは送るが、Bot側で表示させない)
-        const res = await fetch(WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                content: JSON.stringify({
-                    type: "try_lock",
-                    userId: userId,
-                    userName: userName,
-                    ans: rawVal // 内部判定用
-                })
-            })
-        });
-
-        // 申請から少し待ってから判定（Botが「他人が挑戦中」と返したかを確認するのは難しいため、
-        // 成功した前提で進ませ、Bot側で「拒絶メッセージ」が出ていないかを目視で確認する運用になります。
-        // ただし、Bot側でBさんの送信を100%ブロックする処理を入れています）
-        
-        document.getElementById('setupArea').style.display = "none";
-        document.getElementById('drawArea').style.display = "block";
-        canvas.style.display = "inline-block";
-        ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, 400, 400);
-        startTimer();
-
-    } catch (e) {
-        alert("エラーが発生しました。");
-        btn.disabled = false;
-        btn.innerText = "この言葉で描く！";
-    }
-}
-
+// --- お絵描き機能（元の機能を維持） ---
 let currentTool = 'pen';
 function setTool(t) {
     currentTool = t;
-    document.getElementById('penBtn').className = (t === 'pen' ? 'tool-
+    document.getElementById('penBtn').className = (t === 'pen' ? 'tool-btn active-tool' : 'tool-btn');
+    document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
+    ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
+    ctx.lineWidth = (t === 'pen' ? 3 : 30);
+}
+
+let drawing = false;
+const getPos = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: cx - rect.left, y: cy - rect.top };
+};
+canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); };
+canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
+canvas.onmousemove = canvas.ontouchmove = (e) => {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = getPos(e);
+    ctx.lineTo(p.x, p.y); ctx.stroke();
+};
+
+function sendData() {
+    const ans = document.getElementById('answerInput').value.trim();
+    const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const fileName = `ans_${encodedAns}_turn_${currentTurn}_id_${userId}.png`;
+
+    canvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append('payload_json', JSON.stringify({
+            content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！`
+        }));
+        formData.append('file', blob, fileName);
+
+        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
+            if (res.ok) window.close();
+            else alert("送信に失敗しました。");
+        });
+    }, 'image/png');
+}
+</script>
+</body>
+</html>
