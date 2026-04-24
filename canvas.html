@@ -16,6 +16,8 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 .clear-btn { background-color: #dc3545; color: white; }
 .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
 .rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
+/* 門前払い用のスタイル */
+#errorArea { display: none; margin-top: 50px; padding: 20px; background: #ff4747; border-radius: 10px; font-size: 20px; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -23,6 +25,8 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 <div id="timerDisplay">残り 05:00</div>
 
 <h2 id="targetChar">読み込み中...</h2>
+
+<div id="errorArea">挑戦者本人しか入れません</div>
 
 <div id="setupArea">
 <div class="rule-box">
@@ -54,18 +58,36 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const urlParams = new URLSearchParams(window.location.search);
+
+// パラメータ取得
 const WEBHOOK_URL = urlParams.get('webhook');
 const targetChar = urlParams.get('char') || "？";
 const historyList = (urlParams.get('history') || "").split(',');
 const userId = urlParams.get('userId') || "0";
 const userName = urlParams.get('user') || "ななし";
-
-// 【同期の肝】開始時刻を取得。無ければ現在の時刻を代用。
+const token = urlParams.get('token') || "none"; // 合言葉を取得
 const startParam = urlParams.get('start');
+
+// --- 本人確認ガード ---
+// Discord上では文字列として扱うため、厳密に比較できるよう調整が必要な場合があります
+// ※簡易的なガードとしてURLのIDをチェック
+function securityCheck() {
+    // ここでは「URLにIDが含まれているか」を確認
+    if (!userId || userId === "0") {
+        document.getElementById('setupArea').style.display = "none";
+        document.getElementById('targetChar').style.display = "none";
+        document.getElementById('errorArea').style.display = "block";
+        return false;
+    }
+    return true;
+}
+
 const startTime = startParam ? parseInt(startParam) : Math.floor(Date.now() / 1000);
 const LIMIT_SEC = 300; 
 
-document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
+if (securityCheck()) {
+    document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
+}
 
 const timerDisplay = document.getElementById('timerDisplay');
 let isSubmitted = false;
@@ -82,7 +104,8 @@ const countdown = setInterval(() => {
             if (document.getElementById('drawArea').style.display === "block") {
                 sendData();
             } else {
-                window.close();
+                // 描画前に時間切れ
+                document.getElementById('setupArea').innerHTML = "<h2>時間切れです。Discordでやり直してください。</h2>";
             }
             isSubmitted = true;
         }
@@ -146,17 +169,25 @@ canvas.onmousemove = canvas.ontouchmove = (e) => {
 function sendData() {
     if (isSubmitted) return;
     const ans = document.getElementById('answerInput').value.trim();
+    // 答えを16進数にエンコード
     const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
+    
     canvas.toBlob(blob => {
         const formData = new FormData();
-        formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！` }));
-        formData.append('file', blob, `ans_${encodedAns}_id_${userId}.png`);
+        formData.append('payload_json', JSON.stringify({ 
+            content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったら【ひらがな】でチャットに打ってね！` 
+        }));
+        // ファイル名に token を含めるように変更
+        formData.append('file', blob, `ans_${encodedAns}_id_${userId}_${token}.png`);
+        
         fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { 
             if (res.ok) { 
                 isSubmitted = true;
                 clearInterval(countdown); 
                 window.close(); 
-            } 
+            } else {
+                alert("送信に失敗しました。このURLはすでに無効かもしれません。");
+            }
         });
     }, 'image/png');
 }
