@@ -60,21 +60,37 @@ const historyList = (urlParams.get('history') || "").split(',');
 const userId = urlParams.get('userId') || "0";
 const userName = urlParams.get('user') || "ななし";
 
+// 【同期の肝】開始時刻を取得。無ければ現在の時刻を代用。
+const startParam = urlParams.get('start');
+const startTime = startParam ? parseInt(startParam) : Math.floor(Date.now() / 1000);
+const LIMIT_SEC = 300; 
+
 document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
 
-// 共通タイマー開始
-let timeLeft = 300; 
 const timerDisplay = document.getElementById('timerDisplay');
+let isSubmitted = false;
+
+// タイマー更新関数
 const countdown = setInterval(() => {
-    timeLeft--;
+    const now = Math.floor(Date.now() / 1000);
+    let timeLeft = LIMIT_SEC - (now - startTime);
+
+    if (timeLeft <= 0) {
+        timeLeft = 0;
+        clearInterval(countdown);
+        if (!isSubmitted) {
+            if (document.getElementById('drawArea').style.display === "block") {
+                sendData();
+            } else {
+                window.close();
+            }
+            isSubmitted = true;
+        }
+    }
+
     const m = Math.floor(timeLeft / 60);
     const s = timeLeft % 60;
     timerDisplay.innerText = `残り ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    if (timeLeft <= 0) {
-        clearInterval(countdown);
-        if (document.getElementById('drawArea').style.display === "block") sendData();
-        else window.close();
-    }
 }, 1000);
 
 function checkAnswer() {
@@ -128,13 +144,20 @@ canvas.onmousemove = canvas.ontouchmove = (e) => {
 };
 
 function sendData() {
+    if (isSubmitted) return;
     const ans = document.getElementById('answerInput').value.trim();
     const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
     canvas.toBlob(blob => {
         const formData = new FormData();
         formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！` }));
         formData.append('file', blob, `ans_${encodedAns}_id_${userId}.png`);
-        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { if (res.ok) { clearInterval(countdown); window.close(); } });
+        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { 
+            if (res.ok) { 
+                isSubmitted = true;
+                clearInterval(countdown); 
+                window.close(); 
+            } 
+        });
     }, 'image/png');
 }
 </script>
