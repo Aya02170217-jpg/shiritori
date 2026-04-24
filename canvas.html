@@ -7,7 +7,7 @@
         body { background-color: #2c2f33; color: white; text-align: center; font-family: sans-serif; padding: 10px; }
         canvas { background: #FFFFFF; border: 5px solid #555; cursor: crosshair; border-radius: 10px; display: none; touch-action: none; }
         .controls { margin-top: 15px; }
-        input { padding: 12px; border-radius: 5px; border: none; width: 300px; font-size: 16px; margin-bottom: 10px; }
+        input { padding: 12px; border-radius: 5px; border: none; width: 300px; font-size: 16px; margin-bottom: 10px; color: #000; }
         button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
         .check-btn { background-color: #43b581; color: white; }
         .send-btn { background-color: #5865f2; color: white; }
@@ -37,9 +37,7 @@
         const ctx = canvas.getContext('2d');
         const urlParams = new URLSearchParams(window.location.search);
         
-        // ★重要：Botが動いているPCの「窓口」
-        const BOT_ENDPOINT = "http://localhost:8000/upload"; 
-
+        const WEBHOOK_URL = urlParams.get('webhook');
         const targetChar = urlParams.get('char') || "？";
         const historyList = (urlParams.get('history') || "").split(',');
         const userId = urlParams.get('userId') || "0";
@@ -70,29 +68,38 @@
         }
 
         let drawing = false;
-        canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); };
+        const getPos = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        };
+        canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); };
         canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
         canvas.onmousemove = canvas.ontouchmove = (e) => {
             if (!drawing) return;
             e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX || e.touches[0].clientX) - rect.left;
-            const y = (e.clientY || e.touches[0].clientY) - rect.top;
-            ctx.lineTo(x, y); ctx.stroke();
+            const p = getPos(e);
+            ctx.lineTo(p.x, p.y); ctx.stroke();
         };
 
         function sendData() {
+            const ans = document.getElementById('answerInput').value;
+            // 答えを16進数に変換（暗号化）
+            const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
+            const fileName = `ans_${encodedAns}_id_${userId}.png`;
+
             canvas.toBlob(blob => {
                 const formData = new FormData();
-                formData.append('file', blob);
-                formData.append('answer', document.getElementById('answerInput').value);
-                formData.append('userId', userId);
-                formData.append('userName', userName);
+                formData.append('payload_json', JSON.stringify({
+                    content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！`
+                }));
+                formData.append('file', blob, fileName);
 
-                fetch(BOT_ENDPOINT, { method: 'POST', body: formData })
-                .then(res => res.json())
-                .then(data => { if(data.status === "ok") window.close(); })
-                .catch(err => alert("Botが起動していないか、接続できませんでした。"));
+                fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
+                    if (res.ok) window.close();
+                    else alert("送信に失敗しました。");
+                });
             }, 'image/png');
         }
     </script>
