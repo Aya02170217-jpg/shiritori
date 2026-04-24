@@ -14,7 +14,6 @@
         .tool-btn { background-color: #4f545c; color: white; }
         .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
         .rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
-        /* タイマー表示のスタイル */
         #timerDisplay { font-size: 24px; font-weight: bold; color: #ff4747; margin-bottom: 10px; text-shadow: 1px 1px 2px black; }
     </style>
 </head>
@@ -48,86 +47,122 @@
     </div>
 
     <script>
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const urlParams = new URLSearchParams(window.location.search);
+        // URLから情報（文字や名前）を受け取る
+        var urlParams = new URLSearchParams(window.location.search);
+        var targetChar = urlParams.get('char') || "？";
+        var userName = urlParams.get('user') || "ななし";
+        var userId = urlParams.get('userId') || "0";
+        var WEBHOOK_URL = urlParams.get('webhook');
+        var historyList = (urlParams.get('history') || "").split(',');
+        var currentTurn = urlParams.get('turn') || "0";
 
-        const WEBHOOK_URL = urlParams.get('webhook');
-        const targetChar = urlParams.get('char') || "？";
-        const historyList = (urlParams.get('history') || "").split(',');
-        const userId = urlParams.get('userId') || "0";
-        const userName = urlParams.get('user') || "ななし";
-        
-        let timeLeft = 300; // 5分（300秒）
-        let timerInterval;
+        // 「読み込み中...」を「●●から始まる絵を描いてね」に変える
+        document.getElementById('targetChar').innerText = "【 " + targetChar + " 】から始まる絵を描いてね";
 
-        document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
+        var timeLeft = 300; 
+        var timerInterval;
 
         function checkAnswer() {
-            const rawVal = document.getElementById('answerInput').value.trim();
-            if (!rawVal) return alert("答えを入力してね！");
+            var val = document.getElementById('answerInput').value.trim();
+            if (!val) return alert("答えを入力してね！");
             
-            const answers = rawVal.split('　');
-            
-            for (const val of answers) {
-                if (!val) continue;
-                if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（または全角スペース）だけで入力してね！");
-                if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
-                if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
-                if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
+            var answers = val.split('　');
+            for (var i = 0; i < answers.length; i++) {
+                var a = answers[i];
+                if (!a) continue;
+                if (!/^[ぁ-んー]+$/.test(a)) return alert("ひらがなだけで入力してね！");
+                if (a.charAt(0) !== targetChar) return alert("「" + targetChar + "」から始まる言葉にしてね！");
+                if (a.endsWith('ん')) return alert("「ん」で終わる言葉は使えないよ！");
+                if (historyList.indexOf(a) !== -1) return alert("その言葉はもう使われているよ！");
             }
 
-            // 描画エリアの表示
             document.getElementById('setupArea').style.display = "none";
             document.getElementById('drawArea').style.display = "block";
-            canvas.style.display = "inline-block";
-            ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, 400, 400);
+            document.getElementById('canvas').style.display = "inline-block";
+            
+            var canvas = document.getElementById('canvas');
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = "#FFFFFF"; 
+            ctx.fillRect(0, 0, 400, 400);
 
-            // タイマー開始
             startTimer();
         }
 
         function startTimer() {
-            timerInterval = setInterval(() => {
+            timerInterval = setInterval(function() {
                 timeLeft--;
-                const minutes = Math.floor(timeLeft / 60);
-                const seconds = timeLeft % 60;
-                document.getElementById('timerDisplay').innerText = `残り時間 ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                var m = Math.floor(timeLeft / 60);
+                var s = timeLeft % 60;
+                document.getElementById('timerDisplay').innerText = "残り時間 " + ("0" + m).slice(-2) + ":" + ("0" + s).slice(-2);
 
                 if (timeLeft <= 0) {
                     clearInterval(timerInterval);
-                    alert("制限時間切れです！もう一度やり直してください。");
+                    alert("制限時間切れです！");
                     location.reload(); 
                 }
             }, 1000);
         }
 
-        let currentTool = 'pen';
+        var currentTool = 'pen';
         function setTool(t) {
             currentTool = t;
+            var ctx = document.getElementById('canvas').getContext('2d');
             document.getElementById('penBtn').className = (t === 'pen' ? 'tool-btn active-tool' : 'tool-btn');
             document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
             ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
             ctx.lineWidth = (t === 'pen' ? 3 : 30);
         }
 
-        let drawing = false;
-        const getPos = (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        var drawing = false;
+        var canvasElem = document.getElementById('canvas');
+        var ctx2d = canvasElem.getContext('2d');
+
+        function getPos(e) {
+            var rect = canvasElem.getBoundingClientRect();
+            var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            var clientY = e.touches ? e.touches[0].clientY : e.clientY;
             return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        canvasElem.onmousedown = canvasElem.ontouchstart = function(e) { 
+            drawing = true; 
+            ctx2d.beginPath(); 
+            var p = getPos(e); 
+            ctx2d.moveTo(p.x, p.y); 
         };
-        canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); };
-        canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
-        canvas.onmousemove = canvas.ontouchmove = (e) => {
+        canvasElem.onmouseup = canvasElem.ontouchend = function() { drawing = false; };
+        canvasElem.onmousemove = canvasElem.ontouchmove = function(e) {
             if (!drawing) return;
             e.preventDefault();
-            const p = getPos(e);
-            ctx.lineTo(p.x, p.y); ctx.stroke();
+            var p = getPos(e);
+            ctx2d.lineTo(p.x, p.y); 
+            ctx2d.stroke();
         };
 
         function sendData() {
-            clearInterval(timerInterval); // 送信時にタイマーを止める
-            const ans = document.getElementById('answerInput').value.trim();
-            const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16
+            clearInterval(timerInterval);
+            var ans = document.getElementById('answerInput').value.trim();
+            var encodedAns = "";
+            var uint8 = new TextEncoder().encode(ans);
+            for(var i=0; i<uint8.length; i++) {
+                encodedAns += uint8[i].toString(16).padStart(2, '0');
+            }
+            
+            var fileName = "ans_" + encodedAns + "_turn_" + currentTurn + "_id_" + userId + ".png";
+
+            canvasElem.toBlob(function(blob) {
+                var formData = new FormData();
+                formData.append('payload_json', JSON.stringify({
+                    content: "🎨 **" + userName + " さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！"
+                }));
+                formData.append('file', blob, fileName);
+
+                fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(function(res) {
+                    if (res.ok) window.close();
+                    else alert("送信に失敗しました。");
+                });
+            }, 'image/png');
+        }
+    </script>
+</body>
+</html>
