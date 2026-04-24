@@ -14,7 +14,7 @@
         .tool-btn { background-color: #4f545c; color: white; }
         .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
         .rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
-        #timerDisplay { font-size: 24px; font-weight: bold; color: #ff4747; margin-bottom: 10px; text-shadow: 1px 1px 2px black; }
+        #timerDisplay { font-size: 24px; font-weight: bold; color: #ff4747; margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -23,17 +23,14 @@
     <div id="setupArea">
         <div class="rule-box">
             <b style="color: #faa61a;">【しりとりルール】</b><br>
-            <b style="color: #ff4747;">・絵を描く制限時間は5分です</b><br>
+            <b style="color: #ff4747;">・「挑戦中」は5分間で解除されます</b><br>
             ・ひらがなだけで入力してね！<br>
-            ・「ー」で終わる時は、その前の文字からスタート！<br>
-            　（例：かれー → れ）<br>
-            ・「ゃ・ゅ・ょ・っ」等の小文字は、大きい文字になるよ！<br>
-            ・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね<br>
-            　（例：どーなつ　どーなっつ）
+            ・「ー」で終わる時は、前の文字から！<br>
+            ・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね
         </div>
         <input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
         <br>
-        <button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
+        <button class="check-btn" onclick="checkAndLock()">この言葉で描く！</button>
     </div>
 
     <div id="drawArea" style="display: none;">
@@ -53,4 +50,108 @@
         var userId = urlParams.get('userId') || "0";
         var WEBHOOK_URL = urlParams.get('webhook');
         var historyList = (urlParams.get('history') || "").split(',');
-        var currentTurn = urlParams.get('
+        var currentTurn = urlParams.get('turn') || "0";
+
+        document.getElementById('targetChar').innerText = "【 " + targetChar + " 】から始まる絵を描いてね";
+
+        // --- Bさんを止めるメイン処理 ---
+        async function checkAndLock() {
+            var val = document.getElementById('answerInput').value.trim();
+            if (!val) return alert("答えを入力してね！");
+            
+            // バリデーション
+            var answers = val.split('　');
+            for (var i = 0; i < answers.length; i++) {
+                var a = answers[i];
+                if (!a) continue;
+                if (!/^[ぁ-んー]+$/.test(a)) return alert("ひらがなだけで入力してね！");
+                if (a.charAt(0) !== targetChar) return alert("「" + targetChar + "」から始まる言葉にしてね！");
+                if (a.endsWith('ん')) return alert("「ん」で終わる言葉はダメだよ！");
+            }
+
+            // ボタンを一時無効化
+            var btn = document.querySelector('.check-btn');
+            btn.disabled = true;
+            btn.innerText = "チェック中...";
+
+            try {
+                // Discordに宣言を送る（これが「予約」代わりになります）
+                var res = await fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content: "🚨 **【挑戦中】" + userName + "** さんが「" + val + "」で描き始めました！（5分以内に投稿してね）"
+                    })
+                });
+
+                if (res.ok) {
+                    // 成功したらキャンバスへ
+                    document.getElementById('setupArea').style.display = "none";
+                    document.getElementById('drawArea').style.display = "block";
+                    document.getElementById('canvas').style.display = "inline-block";
+                    initCanvas();
+                    startTimer();
+                }
+            } catch (e) {
+                alert("エラーが発生しました。");
+                btn.disabled = false;
+                btn.innerText = "この言葉で描く！";
+            }
+        }
+
+        // --- 以下、お絵描き機能（修正なし） ---
+        var timeLeft = 300;
+        function startTimer() {
+            var timerInterval = setInterval(function() {
+                timeLeft--;
+                var m = Math.floor(timeLeft / 60);
+                var s = timeLeft % 60;
+                document.getElementById('timerDisplay').innerText = "残り時間 " + ("0" + m).slice(-2) + ":" + ("0" + s).slice(-2);
+                if (timeLeft <= 0) { clearInterval(timerInterval); alert("時間切れ！"); location.reload(); }
+            }, 1000);
+        }
+
+        var canvas = document.getElementById('canvas');
+        var ctx = canvas.getContext('2d');
+        function initCanvas() { ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, 400, 400); }
+
+        var currentTool = 'pen';
+        function setTool(t) {
+            currentTool = t;
+            document.getElementById('penBtn').className = (t === 'pen' ? 'tool-btn active-tool' : 'tool-btn');
+            document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
+            ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
+            ctx.lineWidth = (t === 'pen' ? 3 : 30);
+        }
+
+        var drawing = false;
+        function getPos(e) {
+            var rect = canvas.getBoundingClientRect();
+            var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+        canvas.onmousedown = canvas.ontouchstart = function(e) { drawing = true; ctx.beginPath(); var p = getPos(e); ctx.moveTo(p.x, p.y); };
+        canvas.onmouseup = canvas.ontouchend = function() { drawing = false; };
+        canvas.onmousemove = canvas.ontouchmove = function(e) { if (!drawing) return; e.preventDefault(); var p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+
+        function sendData() {
+            var ans = document.getElementById('answerInput').value.trim();
+            var encodedAns = "";
+            var uint8 = new TextEncoder().encode(ans);
+            for(var i=0; i<uint8.length; i++) { encodedAns += uint8[i].toString(16).padStart(2, '0'); }
+            var fileName = "ans_" + encodedAns + "_turn_" + currentTurn + "_id_" + userId + ".png";
+
+            canvas.toBlob(function(blob) {
+                var formData = new FormData();
+                formData.append('payload_json', JSON.stringify({ content: "🎨 **" + userName + " さんが描いたよ！答えを当ててね！**" }));
+                formData.append('file', blob, fileName);
+                fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(function(res) {
+                    if (res.ok) window.close();
+                    else alert("送信失敗");
+                });
+            }, 'image/png');
+        }
+    </script>
+</body>
+</html>
