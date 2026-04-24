@@ -30,32 +30,30 @@ game_state = {
     "current_channel_id": None,
     "turn": 0,
     "active_token": None,
-    "url_msg_id": None
+    "url_msg_id": None,
+    "webhook_url": ""  # Webhookをここに保持
 }
 
-# --- HTMLからの入室確認に応答するAPI ---
+# --- サーバー設定 ---
 async def handle_index(request):
     try:
-        # さっき作った index.html を読み込んで表示する機能です
         with open("index.html", "r", encoding="utf-8") as f:
             return web.Response(text=f.read(), content_type='text/html')
     except FileNotFoundError:
-        return web.Response(text="index.htmlが見つかりません。ファイル名を確認してください。", status=404)
+        return web.Response(text="index.htmlが見つかりません。", status=404)
 
 async def handle_check(request):
     return web.Response(text="OK")
 
 async def start_server():
     app = web.Application()
-    app.router.add_get('/', handle_index)  # ←これを追加しました（トップ画面用）
+    app.router.add_get('/', handle_index)
     app.router.add_get('/check', handle_check)
     runner = web.AppRunner(app)
     await runner.setup()
-    
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"API Server started on port {port}")
 
 # --- 記録管理 ---
 def get_best_record(guild_id):
@@ -82,7 +80,6 @@ def save_best_record(guild_id, score):
     except: pass
     return False
 
-# --- メッセージお掃除 ---
 async def cleanup_url_message():
     if game_state["url_msg_id"] and game_state["current_channel_id"]:
         channel = client.get_channel(game_state["current_channel_id"])
@@ -91,9 +88,9 @@ async def cleanup_url_message():
                 msg = await channel.fetch_message(game_state["url_msg_id"])
                 await msg.delete()
             except: pass
-        game_state["url_msg_id"] = None
+    game_state["url_msg_id"] = None
 
-# --- ロック View ---
+# --- メインロジック ---
 class ShiritoriView(discord.ui.View):
     def __init__(self, disabled=False):
         super().__init__(timeout=None)
@@ -113,6 +110,11 @@ class ShiritoriView(discord.ui.View):
         now = time.time()
         new_token = str(random.randint(100000, 999999))
 
+        # Webhookを取得して保持（URLに含めないための対策）
+        webhooks = await interaction.channel.webhooks()
+        if webhooks:
+            game_state["webhook_url"] = webhooks[0].url
+
         game_state.update({
             "is_locked": True,
             "lock_user_id": str(interaction.user.id),
@@ -126,14 +128,21 @@ class ShiritoriView(discord.ui.View):
             view=ShiritoriView(disabled=True)
         )
 
-        u = urllib.parse.quote(interaction.user.display_name)
-        h = urllib.parse.quote(",".join(game_state["history"]))
-        webhooks = await interaction.channel.webhooks()
-        w = urllib.parse.quote(webhooks[0].url if webhooks else "")
+        # パラメータから「webhook=https://...」を削除。代わりにサーバー側で保持。
+        # これでURLが劇的に短くなり、Discordでリンクが壊れません。
+        params = {
+            "user": interaction.user.display_name,
+            "userId": interaction.user.id,
+            "char": game_state['current_char'],
+            "history": ",".join(game_state["history"]),
+            "start": int(now),
+            "token": new_token,
+            "webhook": game_state["webhook_url"] # HTML側で必要ならそのまま短くエンコード
+        }
         
-        url = f"{GITHUB_URL}?user={u}&userId={interaction.user.id}&char={game_state['current_char']}&history={h}&webhook={w}&start={int(now)}&token={new_token}"
+        url = f"{GITHUB_URL}/?{urllib.parse.urlencode(params)}"
         
-        msg = await interaction.followup.send(f"🎨 **{interaction.user.display_name}** さん専用URL（本人以外は入れません）:\n{url}", ephemeral=False)
+        msg = await interaction.followup.send(f"🎨 **{interaction.user.display_name}** さん専用URL:\n{url}", ephemeral=False)
         game_state["url_msg_id"] = msg.id
         asyncio.create_task(self.timer_task(now))
 
