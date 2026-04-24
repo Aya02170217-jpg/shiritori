@@ -13,8 +13,9 @@
         .send-btn { background-color: #5865f2; color: white; }
         .tool-btn { background-color: #4f545c; color: white; }
         .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
-        /* ルールボックスのスタイル */
         .rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
+        /* タイマー表示のスタイル */
+        #timerDisplay { font-size: 24px; font-weight: bold; color: #ff4747; margin-bottom: 10px; text-shadow: 1px 1px 2px black; }
     </style>
 </head>
 <body>
@@ -23,6 +24,7 @@
     <div id="setupArea">
         <div class="rule-box">
             <b style="color: #faa61a;">【しりとりルール】</b><br>
+            <b style="color: #ff4747;">・絵を描く制限時間は5分です</b><br>
             ・ひらがなだけで入力してね！<br>
             ・「ー」で終わる時は、その前の文字からスタート！<br>
             　（例：かれー → れ）<br>
@@ -36,6 +38,7 @@
     </div>
 
     <div id="drawArea" style="display: none;">
+        <div id="timerDisplay">残り時間 05:00</div>
         <canvas id="canvas" width="400" height="400"></canvas>
         <div class="controls">
             <button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
@@ -54,6 +57,9 @@
         const historyList = (urlParams.get('history') || "").split(',');
         const userId = urlParams.get('userId') || "0";
         const userName = urlParams.get('user') || "ななし";
+        
+        let timeLeft = 300; // 5分（300秒）
+        let timerInterval;
 
         document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
 
@@ -61,21 +67,39 @@
             const rawVal = document.getElementById('answerInput').value.trim();
             if (!rawVal) return alert("答えを入力してね！");
             
-            // 全角スペースだけで分割するように修正
             const answers = rawVal.split('　');
             
             for (const val of answers) {
-                if (!val) continue; // 連続した全角スペース対策
+                if (!val) continue;
                 if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（または全角スペース）だけで入力してね！");
                 if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
                 if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
                 if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
             }
 
+            // 描画エリアの表示
             document.getElementById('setupArea').style.display = "none";
             document.getElementById('drawArea').style.display = "block";
             canvas.style.display = "inline-block";
             ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, 400, 400);
+
+            // タイマー開始
+            startTimer();
+        }
+
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                const minutes = Math.floor(timeLeft / 60);
+                const seconds = timeLeft % 60;
+                document.getElementById('timerDisplay').innerText = `残り時間 ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    alert("制限時間切れです！もう一度やり直してください。");
+                    location.reload(); 
+                }
+            }, 1000);
         }
 
         let currentTool = 'pen';
@@ -104,24 +128,6 @@
         };
 
         function sendData() {
+            clearInterval(timerInterval); // 送信時にタイマーを止める
             const ans = document.getElementById('answerInput').value.trim();
-            // 答えを16進数に変換
-            const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
-            const fileName = `ans_${encodedAns}_id_${userId}.png`;
-
-            canvas.toBlob(blob => {
-                const formData = new FormData();
-                formData.append('payload_json', JSON.stringify({
-                    content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！`
-                }));
-                formData.append('file', blob, fileName);
-
-                fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
-                    if (res.ok) window.close();
-                    else alert("送信に失敗しました。");
-                });
-            }, 'image/png');
-        }
-    </script>
-</body>
-</html>
+            const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16
