@@ -13,11 +13,22 @@
         .send-btn { background-color: #5865f2; color: white; }
         .tool-btn { background-color: #4f545c; color: white; }
         .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
+        .rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
     </style>
 </head>
 <body>
     <h2 id="targetChar">読み込み中...</h2>
+    
     <div id="setupArea">
+        <div class="rule-box">
+            <b style="color: #faa61a;">【しりとりルール】</b><br>
+            ・ひらがなだけで入力してね！<br>
+            ・「ー」で終わる時は、その前の文字からスタート！<br>
+            　（例：かれー → れ）<br>
+            ・「ゃ・ゅ・ょ・っ」等の小文字は、大きい文字になるよ！<br>
+            ・答えが複数ある時はスペースを空けてね<br>
+            　（例：どーなつ どーなっつ）
+        </div>
         <input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
         <br>
         <button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
@@ -36,7 +47,7 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const urlParams = new URLSearchParams(window.location.search);
-        
+
         const WEBHOOK_URL = urlParams.get('webhook');
         const targetChar = urlParams.get('char') || "？";
         const historyList = (urlParams.get('history') || "").split(',');
@@ -46,11 +57,18 @@
         document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
 
         function checkAnswer() {
-            const val = document.getElementById('answerInput').value;
-            if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがなだけで入力してね！");
-            if (val.charAt(0) !== targetChar) return alert(`「${targetChar}」から始まる言葉にしてね！`);
-            if (val.endsWith('ん')) return alert("「ん」で終わる言葉は使えないよ！");
-            if (historyList.includes(val)) return alert("その言葉はもう使われてるよ！");
+            const rawVal = document.getElementById('answerInput').value.trim();
+            if (!rawVal) return alert("答えを入力してね！");
+            
+            // スペース区切りの入力を配列にする
+            const answers = rawVal.split(/\s+/);
+            
+            for (const val of answers) {
+                if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（またはスペース）だけで入力してね！");
+                if (val.charAt(0) !== targetChar) return alert(`「${val}」が「${targetChar}」から始まっていないよ！`);
+                if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
+                if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
+            }
 
             document.getElementById('setupArea').style.display = "none";
             document.getElementById('drawArea').style.display = "block";
@@ -84,8 +102,8 @@
         };
 
         function sendData() {
-            const ans = document.getElementById('answerInput').value;
-            // 答えを16進数に変換（暗号化）
+            const ans = document.getElementById('answerInput').value.trim();
+            // 答えを16進数に変換（スペースも含めて暗号化し、Bot側でsplitする）
             const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
             const fileName = `ans_${encodedAns}_id_${userId}.png`;
 
