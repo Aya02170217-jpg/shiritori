@@ -5,14 +5,16 @@
     <title>お絵描きしりとりキャンバス</title>
     <style>
         body { background-color: #2c2f33; color: white; text-align: center; font-family: sans-serif; padding: 20px; }
-        canvas { background: #999; border: 5px solid #555; cursor: crosshair; touch-action: none; border-radius: 10px; }
+        /* ボードを白に */
+        canvas { background: #FFFFFF; border: 5px solid #555; cursor: crosshair; touch-action: none; border-radius: 10px; }
         .controls { margin-top: 15px; }
-        input { padding: 12px; border-radius: 5px; border: none; width: 300px; font-size: 16px; }
+        input { padding: 12px; border-radius: 5px; border: none; width: 320px; font-size: 16px; }
         button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
         .send-btn { background-color: #5865f2; color: white; }
         .clear-btn { background-color: #ed4245; color: white; }
         .eraser-btn { background-color: #fee75c; color: #000; }
-        .notice { font-size: 13px; color: #ccc; margin-top: 15px; line-height: 1.8; text-align: center; background: #23272a; padding: 10px; border-radius: 8px; display: inline-block; }
+        /* 注意書きのデザイン */
+        .notice { font-size: 14px; color: #fff; margin-top: 15px; line-height: 1.8; text-align: center; background: #23272a; padding: 15px; border-radius: 8px; border: 1px solid #5865f2; display: inline-block; }
     </style>
 </head>
 <body>
@@ -29,10 +31,10 @@
         
         <br>
         <div class="notice">
-            ⚠️ 答えは**ひらがな**で書いてね。<br>
-            （カタカナ・英語・漢字・数字・半角文字はエラーになります）<br>
-            紛らわしいもの（言い方変えてほしいもの）は、<br>
-            **全角スペース**を空けて複数入力してね！<br>
+            ⚠️ 答えは**「ひらがな」**で書いてね。<br>
+            （カタカナ・英数字などはエラーになります。）<br>
+            複数の呼び方がある時は、<br>
+            **「全角」スペース**で区切って全部入力してね。<br>
             例：どーなつ　どーなっつ
         </div>
     </div>
@@ -45,14 +47,20 @@
         // ★ここにコピーしたウェブフックURLを貼り付けてください！
         const WEBHOOK_URL = "https://discord.com/api/webhooks/1497137188389781555/ZZ9xvnvhfJohneUCCaxvMELZBHlxktLiEHVgZa3_9uly4U_s7Tq-JVXkILQuOQ1gtKIX";
 
+        // 背景を白で塗りつぶす（透過防止）
+        function fillCanvasWhite() {
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        fillCanvasWhite();
+
         let drawing = false;
         let isEraser = false;
 
-        // 消しゴム切り替え機能
         eraserBtn.onclick = () => {
             isEraser = !isEraser;
             eraserBtn.innerText = isEraser ? "消しゴム：ON" : "消しゴム：OFF";
-            ctx.strokeStyle = isEraser ? "#999" : "#000"; 
+            ctx.strokeStyle = isEraser ? "#FFFFFF" : "#000000"; 
             ctx.lineWidth = isEraser ? 25 : 3;
         };
 
@@ -74,34 +82,35 @@
         canvas.addEventListener('touchmove', draw);
         canvas.addEventListener('touchend', stopDrawing);
         ctx.lineCap = 'round';
-        ctx.strokeStyle = "#000";
+        ctx.strokeStyle = "#000000";
         ctx.lineWidth = 3;
 
-        function clearCanvas() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+        function clearCanvas() { 
+            ctx.clearRect(0, 0, canvas.width, canvas.height); 
+            fillCanvasWhite();
+        }
 
         function sendData() {
-            const input = document.getElementById('answerInput').value; // trimはしない（半角スペース検知のため）
+            const input = document.getElementById('answerInput').value;
             if (!input) return alert("答えを入力してね！");
 
-            // 【厳格チェック】ひらがな・長音・全角スペース以外、および半角全般を禁止
+            // 名前を取得
+            const urlParams = new URLSearchParams(window.location.search);
+            const userName = urlParams.get('user') || "ななし";
+
             const isOnlyZenkakuHiragana = /^[ぁ-んー　]+$/.test(input);
             const hasHankaku = /[ -~]/.test(input); 
 
             if (!isOnlyZenkakuHiragana || hasHankaku) {
-                return alert("エラー：ひらがなと全角スペースだけで入力してね！\n（半角文字や数字、カタカナなどは使えません）");
+                return alert("エラー：ひらがなと全角スペースだけで入力してね！");
             }
 
-            // 全角スペースで区切って配列用にする
             const answerList = input.split('　').filter(s => s).join(',');
 
             canvas.toBlob(blob => {
                 const formData = new FormData();
                 formData.append('payload_json', JSON.stringify({
-                    content: `🎨 **しりとり画像が届いたよ！**\n答えがわかったらチャットに打ってね！`,
-                    embeds: [{
-                        description: `※この絵の正解データ: \`!e ${answerList}\``,
-                        color: 0x5865f2
-                    }]
+                    content: `🎨 **${userName} さんがお絵描きしたよ！**\n\n「わかった！」という人は、このチャットに**ひらがな**で答えを打ってね！\n正解するとBotが反応するよ。`,
                 }));
                 formData.append('file', blob, 'drawing.png');
 
@@ -112,10 +121,10 @@
                         clearCanvas();
                         document.getElementById('answerInput').value = "";
                     } else {
-                        alert("送信失敗。URLが正しいか確認してね。");
+                        alert("送信失敗。URLを確認してね。");
                     }
                 });
-            });
+            }, 'image/png');
         }
     </script>
 </body>
