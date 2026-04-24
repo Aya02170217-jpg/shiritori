@@ -16,116 +16,114 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 .clear-btn { background-color: #dc3545; color: white; }
 .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
 .rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
-/* 門前払い用のスタイル */
-#errorArea { display: none; margin-top: 50px; padding: 20px; background: #ff4747; border-radius: 10px; font-size: 20px; font-weight: bold; }
+#errorArea { display: none; margin-top: 100px; padding: 30px; background: #dc3545; color: white; border-radius: 10px; font-size: 24px; font-weight: bold; width: 80%; margin-left: auto; margin-right: auto; }
 </style>
 </head>
 <body>
 
 <div id="timerDisplay">残り 05:00</div>
-
 <h2 id="targetChar">読み込み中...</h2>
+<div id="errorArea"></div>
 
-<div id="errorArea">挑戦者本人しか入れません</div>
-
-<div id="setupArea">
-<div class="rule-box">
-<b style="color: #faa61a;">【しりとりルール】</b><br>
-・5分以内に送信してね！<br>
-・ひらがなだけで入力してね！<br>
-・「ー」で終わる時は、その前の文字からスタート！<br>
-　（例：かれー → れ）<br>
-・「ゃ・ゅ・ょ・っ」等の小文字は、大きい文字になるよ！<br>
-・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね<br>
-　（例：どーなつ　どーなっつ）
-</div>
-<input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
-<br>
-<button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
+<div id="setupArea" style="display: none;">
+    <div class="rule-box">
+        <b style="color: #faa61a;">【しりとりルール】</b><br>
+        ・5分以内に送信してね！<br>
+        ・ひらがなだけで入力してね！<br>
+        ・「ー」で終わる時は、その前の文字からスタート！<br>
+        ・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね
+    </div>
+    <input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
+    <br>
+    <button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
 </div>
 
 <div id="drawArea" style="display: none;">
-<canvas id="canvas" width="400" height="400"></canvas>
-<div class="controls">
-<button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
-<button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
-<button class="clear-btn" onclick="clearCanvas()">すべてを削除</button>
-<button class="send-btn" onclick="sendData()">Discordへ送信！</button>
-</div>
+    <canvas id="canvas" width="400" height="400"></canvas>
+    <div class="controls">
+        <button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
+        <button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
+        <button class="clear-btn" onclick="clearCanvas()">すべてを削除</button>
+        <button class="send-btn" onclick="sendData()">Discordへ送信！</button>
+    </div>
 </div>
 
 <script>
+const urlParams = new URLSearchParams(window.location.search);
+const userId = urlParams.get('userId');
+const token = urlParams.get('token');
+const targetChar = urlParams.get('char') || "？";
+const userName = urlParams.get('user') || "ななし";
+const WEBHOOK_URL = urlParams.get('webhook');
+const historyList = (urlParams.get('history') || "").split(',');
+const startParam = urlParams.get('start');
+const startTime = startParam ? parseInt(startParam) : Math.floor(Date.now() / 1000);
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const urlParams = new URLSearchParams(window.location.search);
-
-// パラメータ取得
-const WEBHOOK_URL = urlParams.get('webhook');
-const targetChar = urlParams.get('char') || "？";
-const historyList = (urlParams.get('history') || "").split(',');
-const userId = urlParams.get('userId') || "0";
-const userName = urlParams.get('user') || "ななし";
-const token = urlParams.get('token') || "none"; // 合言葉を取得
-const startParam = urlParams.get('start');
-
-// --- 本人確認ガード ---
-// Discord上では文字列として扱うため、厳密に比較できるよう調整が必要な場合があります
-// ※簡易的なガードとしてURLのIDをチェック
-function securityCheck() {
-    // ここでは「URLにIDが含まれているか」を確認
-    if (!userId || userId === "0") {
-        document.getElementById('setupArea').style.display = "none";
-        document.getElementById('targetChar').style.display = "none";
-        document.getElementById('errorArea').style.display = "block";
-        return false;
-    }
-    return true;
-}
-
-const startTime = startParam ? parseInt(startParam) : Math.floor(Date.now() / 1000);
-const LIMIT_SEC = 300; 
-
-if (securityCheck()) {
-    document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
-}
-
-const timerDisplay = document.getElementById('timerDisplay');
 let isSubmitted = false;
+let countdown;
 
-// タイマー更新関数
-const countdown = setInterval(() => {
-    const now = Math.floor(Date.now() / 1000);
-    let timeLeft = LIMIT_SEC - (now - startTime);
-
-    if (timeLeft <= 0) {
-        timeLeft = 0;
-        clearInterval(countdown);
-        if (!isSubmitted) {
-            if (document.getElementById('drawArea').style.display === "block") {
-                sendData();
-            } else {
-                // 描画前に時間切れ
-                document.getElementById('setupArea').innerHTML = "<h2>時間切れです。Discordでやり直してください。</h2>";
-            }
-            isSubmitted = true;
-        }
+// --- 鉄壁ガード：Botに問い合わせ ---
+async function init() {
+    if (!userId || !token) {
+        showFatalError("URLが正しくありません。");
+        return;
     }
 
-    const m = Math.floor(timeLeft / 60);
-    const s = timeLeft % 60;
-    timerDisplay.innerText = `残り ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}, 1000);
+    try {
+        // BotのAPIに確認（localhost部分はBotを動かしているPCの状況に合わせてください）
+        const response = await fetch(`http://localhost:8080/check?userId=${userId}&token=${token}`);
+        const data = await response.json();
+
+        if (data.allowed) {
+            document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
+            document.getElementById('setupArea').style.display = "block";
+            startTimer();
+        } else {
+            showFatalError("アクセス権がありません。<br>他の人が挑戦中か、古いURLです。");
+        }
+    } catch (e) {
+        showFatalError("サーバー（Bot）に接続できません。<br>Botが起動しているか確認してください。");
+    }
+}
+
+function showFatalError(msg) {
+    document.getElementById('targetChar').style.display = "none";
+    document.getElementById('timerDisplay').style.display = "none";
+    const err = document.getElementById('errorArea');
+    err.innerHTML = msg;
+    err.style.display = "block";
+}
+
+function startTimer() {
+    const timerDisplay = document.getElementById('timerDisplay');
+    countdown = setInterval(() => {
+        const now = Math.floor(Date.now() / 1000);
+        let timeLeft = 300 - (now - startTime);
+        if (timeLeft <= 0) {
+            timeLeft = 0;
+            clearInterval(countdown);
+            if (!isSubmitted) {
+                if (document.getElementById('drawArea').style.display === "block") sendData();
+                else showFatalError("時間切れです。");
+            }
+        }
+        const m = Math.floor(timeLeft / 60);
+        const s = timeLeft % 60;
+        timerDisplay.innerText = `残り ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }, 1000);
+}
 
 function checkAnswer() {
     const rawVal = document.getElementById('answerInput').value.trim();
     if (!rawVal) return alert("答えを入力してね！");
     const answers = rawVal.split('　');
     for (const val of answers) {
-        if (!val) continue;
-        if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（または全角スペース）だけで入力してね！");
-        if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
-        if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
-        if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
+        if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがなだけで入力してね！");
+        if (val.charAt(0) !== targetChar) return alert(`「${targetChar}」から始まる言葉にしてね！`);
+        if (val.endsWith('ん')) return alert("「ん」で終わる言葉はダメだよ！");
+        if (historyList.includes(val)) return alert("その言葉はもう使われてるよ！");
     }
     document.getElementById('setupArea').style.display = "none";
     document.getElementById('drawArea').style.display = "block";
@@ -144,9 +142,8 @@ function setTool(t) {
 }
 
 function clearCanvas() {
-    if(confirm("すべて削除して白紙に戻しますか？")) {
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if(confirm("すべて削除しますか？")) {
+        ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 }
 
@@ -169,28 +166,28 @@ canvas.onmousemove = canvas.ontouchmove = (e) => {
 function sendData() {
     if (isSubmitted) return;
     const ans = document.getElementById('answerInput').value.trim();
-    // 答えを16進数にエンコード
     const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
     
     canvas.toBlob(blob => {
         const formData = new FormData();
-        formData.append('payload_json', JSON.stringify({ 
-            content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったら【ひらがな】でチャットに打ってね！` 
-        }));
-        // ファイル名に token を含めるように変更
+        formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName} さんがお絵描きしたよ！**` }));
         formData.append('file', blob, `ans_${encodedAns}_id_${userId}_${token}.png`);
         
         fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { 
             if (res.ok) { 
                 isSubmitted = true;
-                clearInterval(countdown); 
+                clearInterval(countdown);
+                alert("送信しました！Discordに戻ってください。");
                 window.close(); 
             } else {
-                alert("送信に失敗しました。このURLはすでに無効かもしれません。");
+                alert("送信に失敗しました。");
             }
         });
     }, 'image/png');
 }
+
+// 起動
+init();
 </script>
 </body>
 </html>
