@@ -18,7 +18,6 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-# ゲーム状態の管理
 game_state = {
     "current_char": "あ",
     "history": [],
@@ -33,15 +32,16 @@ game_state = {
     "url_msg_id": None
 }
 
-# --- サーバー設定 ---
+# --- サーバー設定（Render最適化版） ---
 async def handle_index(request):
     try:
         with open("index.html", "r", encoding="utf-8") as f:
             return web.Response(text=f.read(), content_type='text/html')
-    except FileNotFoundError:
-        return web.Response(text="index.htmlが見つかりません。", status=404)
+    except:
+        return web.Response(text="index.html not found", status=404)
 
 async def handle_check(request):
+    # 100%返事を返すためのシンプル応答
     return web.Response(text="OK")
 
 async def start_server():
@@ -50,9 +50,11 @@ async def start_server():
     app.router.add_get('/check', handle_check)
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
+    # Renderのポート指定に確実に合わせる
+    port = int(os.environ.get("PORT", 10000)) 
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
+    print(f"Server started on port {port}")
 
 # --- 記録管理 ---
 def get_best_record(guild_id):
@@ -65,19 +67,16 @@ def get_best_record(guild_id):
     return 0
 
 def save_best_record(guild_id, score):
-    data = {}
     try:
+        data = {}
         if os.path.exists(RECORD_FILE):
             with open(RECORD_FILE, "r") as f:
                 data = json.load(f)
-        current_best = data.get(str(guild_id), 0)
-        if score > current_best:
+        if score > data.get(str(guild_id), 0):
             data[str(guild_id)] = score
             with open(RECORD_FILE, "w") as f:
                 json.dump(data, f)
-            return True
     except: pass
-    return False
 
 async def cleanup_url_message():
     if game_state["url_msg_id"] and game_state["current_channel_id"]:
@@ -98,11 +97,9 @@ class ShiritoriView(discord.ui.View):
         self.add_item(btn)
 
     async def draw_callback(self, interaction: discord.Interaction):
-        # 【重要】Renderが重くてもエラーにならないよう、Discordに応答を待たせる
         try:
             await interaction.response.defer(ephemeral=True)
-        except:
-            pass
+        except: pass
 
         if game_state["is_locked"] and (time.time() - game_state["lock_time"] > 300):
             game_state["is_locked"] = False
@@ -115,7 +112,7 @@ class ShiritoriView(discord.ui.View):
         now = time.time()
         new_token = str(random.randint(100000, 999999))
         webhooks = await interaction.channel.webhooks()
-        webhook_url = webhooks[0].url if webhooks else ""
+        w_url = webhooks[0].url if webhooks else ""
 
         game_state.update({
             "is_locked": True,
@@ -125,33 +122,29 @@ class ShiritoriView(discord.ui.View):
             "active_token": new_token
         })
 
-        # URLパラメータの整理（リンクを壊さないための処理）
-        params = {
+        p = {
             "user": interaction.user.display_name,
             "userId": interaction.user.id,
             "char": game_state['current_char'],
             "history": ",".join(game_state["history"]),
-            "webhook": webhook_url,
+            "webhook": w_url,
             "start": int(now),
             "token": new_token
         }
-        query_string = urllib.parse.urlencode(params)
-        url = f"{GITHUB_URL.rstrip('/')}/?{query_string}"
+        url = f"{GITHUB_URL}/?{urllib.parse.urlencode(p)}"
         
-        # メッセージ送信
-        msg = await interaction.followup.send(f"🎨 **{interaction.user.display_name}** さん専用URL:\n{url}", ephemeral=False)
-        game_state["url_msg_id"] = msg.id
+        try:
+            msg = await interaction.followup.send(f"🎨 専用URL:\n{url}", ephemeral=False)
+            game_state["url_msg_id"] = msg.id
+        except: pass
+        
         asyncio.create_task(self.timer_task(now))
 
-    async def timer_task(self, start_time):
+    async def timer_task(self, st):
         await asyncio.sleep(300)
-        if game_state["is_locked"] and game_state["lock_time"] == start_time:
+        if game_state["is_locked"] and game_state["lock_time"] == st:
             game_state["is_locked"] = False
-            game_state["active_token"] = None
             await cleanup_url_message()
-            channel = client.get_channel(game_state["current_channel_id"])
-            if channel:
-                await channel.send("⏰ 5分経過したのでロックを解除したよ。次の人どうぞ！", view=ShiritoriView())
 
 @client.event
 async def on_ready():
@@ -159,81 +152,46 @@ async def on_ready():
     for guild in client.guilds:
         tree.copy_global_to(guild=guild)
         await tree.sync(guild=guild)
-    print(f"Bot準備完了: {client.user}")
+    print(f"Bot Ready: {client.user}")
 
-@tree.command(name="start", description="ゲームを開始します")
+@tree.command(name="start", description="開始")
 async def start(interaction: discord.Interaction):
-    webhooks = await interaction.channel.webhooks()
-    if not webhooks: await interaction.channel.create_webhook(name="ShiritoriBot")
-    
-    best = get_best_record(interaction.guild_id)
-    chars = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろ"
-    game_state.update({
-        "current_char": random.choice(chars),
-        "history": [], 
-        "is_locked": False, 
-        "current_channel_id": interaction.channel.id, 
-        "turn": 1,
-        "current_answer_list": [],
-        "active_token": None,
-        "url_msg_id": None
-    })
-    await interaction.response.send_message(
-        f"🎨 お絵描きしりとり開始！\n最初の文字は【 **{game_state['current_char']}** 】です！\n🏆 最高記録: {best} ターン",
-        view=ShiritoriView()
-    )
+    try:
+        webhooks = await interaction.channel.webhooks()
+        if not webhooks: await interaction.channel.create_webhook(name="ShiritoriBot")
+        best = get_best_record(interaction.guild_id)
+        game_state.update({"current_char": random.choice("あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろ"), "history": [], "is_locked": False, "turn": 1})
+        await interaction.response.send_message(f"🎨 開始！次は【{game_state['current_char']}】\n🏆 最高: {best}", view=ShiritoriView())
+    except:
+        await interaction.channel.send(f"🎨 開始！次は【{game_state['current_char']}】", view=ShiritoriView())
 
-@tree.command(name="giveup", description="管理者リセット")
-@app_commands.default_permissions(administrator=True)
+@tree.command(name="giveup", description="リセット")
 async def giveup(interaction: discord.Interaction):
     await cleanup_url_message()
-    chars = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろ"
-    game_state.update({
-        "current_char": random.choice(chars),
-        "history": [],
-        "is_locked": False,
-        "turn": 1,
-        "current_answer_list": [],
-        "active_token": None
-    })
-    await interaction.response.send_message("📢 ゲームを完全にリセットしました。", view=ShiritoriView())
+    game_state["is_locked"] = False
+    await interaction.response.send_message("📢 リセットしました。", view=ShiritoriView())
 
 @client.event
 async def on_message(message):
     if message.author == client.user: return
     if message.webhook_id and message.attachments:
-        fname = message.attachments[0].filename
-        if fname.startswith("ans_"):
-            try:
-                parts = fname.replace(".png", "").split("_")
-                token_from_web = parts[4] if len(parts) > 4 else ""
-                if game_state["active_token"] is None or token_from_web != game_state["active_token"]:
-                    return 
-                decoded_ans = bytes.fromhex(parts[1]).decode('utf-8')
-                game_state["current_answer_list"] = decoded_ans.split('　')
+        try:
+            parts = message.attachments[0].filename.replace(".png", "").split("_")
+            if game_state.get("active_token") == parts[4]:
+                game_state["current_answer_list"] = bytes.fromhex(parts[1]).decode('utf-8').split('　')
                 game_state["current_author_id"] = str(parts[3])
-                return
-            except: pass
+        except: pass
 
-    if game_state["is_locked"] and message.channel.id == game_state["current_channel_id"]:
-        if message.content in game_state.get("current_answer_list", []):
-            if str(message.author.id) == game_state["current_author_id"]:
-                await message.reply("⚠️ 描いた本人は回答できないよ！")
-                return
+    if game_state["is_locked"] and message.content in game_state.get("current_answer_list", []):
+        if str(message.author.id) != game_state["current_author_id"]:
             await cleanup_url_message()
-            game_state["active_token"] = None
             last_word = message.content
             next_char = last_word[-1]
-            if next_char == "ー" and len(last_word) > 1: next_char = last_word[-2]
-            vowels = {"ぁ":"あ","ぃ":"い","ぅ":"う","ぇ":"え","ぉ":"お","ゃ":"や","ゅ":"ゆ","ょ":"よ","っ":"つ","ゎ":"わ"}
-            next_char = vowels.get(next_char, next_char)
+            if next_char == "ー": next_char = last_word[-2]
+            next_char = {"ぁ":"あ","ぃ":"い","ぅ":"う","ぇ":"え","ぉ":"お","ゃ":"や","ゅ":"ゆ","ょ":"よ","っ":"つ","ゎ":"わ"}.get(next_char, next_char)
             save_best_record(message.guild.id, game_state["turn"])
+            game_state.update({"current_char": next_char, "is_locked": False, "turn": game_state["turn"] + 1})
             game_state["history"].append(last_word)
-            game_state["current_char"], game_state["is_locked"] = next_char, False
-            game_state["turn"] += 1
-            await message.reply(
-                f"🎊 正解！「{last_word}」！\n次は【 **{game_state['current_char']}** 】から描いてね！",
-                view=ShiritoriView()
-            )
+            await message.reply(f"🎊 正解！次は【{next_char}】！", view=ShiritoriView())
 
 client.run(TOKEN)
