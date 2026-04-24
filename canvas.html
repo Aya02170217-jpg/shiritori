@@ -5,13 +5,15 @@
     <title>お絵描きしりとりキャンバス</title>
     <style>
         body { background-color: #2c2f33; color: white; text-align: center; font-family: sans-serif; padding: 10px; }
-        canvas { background: #FFFFFF; border: 5px solid #555; cursor: crosshair; touch-action: none; border-radius: 10px; display: none; } /* 初期状態は非表示 */
+        canvas { background: #FFFFFF; border: 5px solid #555; cursor: crosshair; touch-action: none; border-radius: 10px; display: none; }
         .controls { margin-top: 15px; }
         input { padding: 12px; border-radius: 5px; border: none; width: 300px; font-size: 16px; margin-bottom: 10px; }
         button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
         .check-btn { background-color: #43b581; color: white; }
         .send-btn { background-color: #5865f2; color: white; }
         .clear-btn { background-color: #ed4245; color: white; }
+        .tool-btn { background-color: #4f545c; color: white; }
+        .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
         .info-box { background: #23272a; padding: 10px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #5865f2; }
     </style>
 </head>
@@ -31,7 +33,10 @@
     <div id="drawArea" style="display: none;">
         <canvas id="canvas" width="400" height="400"></canvas>
         <div class="controls">
+            <button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
+            <button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
             <button class="clear-btn" onclick="clearCanvas()">全消去</button>
+            <br><br>
             <button class="send-btn" onclick="sendData()">Discordへ送信！</button>
         </div>
     </div>
@@ -41,17 +46,19 @@
         const ctx = canvas.getContext('2d');
         const urlParams = new URLSearchParams(window.location.search);
         
-        // ★設定：ウェブフックURL
+        // ★Webhook URL
         const WEBHOOK_URL = "https://discord.com/api/webhooks/1497137188389781555/ZZ9xvnvhfJohneUCCaxvMELZBHlxktLiEHVgZa3_9uly4U_s7Tq-JVXkILQuOQ1gtKIX";
 
-        // URLから情報を取得
         const targetChar = urlParams.get('char') || "？";
         const historyStr = urlParams.get('history') || "";
         const historyList = historyStr.split(',');
         const userName = urlParams.get('user') || "ななし";
+        const userId = urlParams.get('userId') || "0"; // Botから渡されるID
 
         document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
         if(historyStr) document.getElementById('historyBox').innerText = `既出：${historyStr.replace(/,/g, '、')}`;
+
+        let currentTool = 'pen';
 
         function checkAnswer() {
             const val = document.getElementById('answerInput').value;
@@ -62,32 +69,42 @@
             if (val.endsWith('ん')) return alert("「ん」で終わる言葉は使えません！");
             if (historyList.includes(val)) return alert("その言葉はもう使われています！");
 
-            // チェック合格
             document.getElementById('setupArea').style.display = "none";
             document.getElementById('drawArea').style.display = "block";
             canvas.style.display = "inline-block";
             fillWhite();
         }
 
-        function fillWhite() { ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+        function fillWhite() { ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle = "#000000"; }
+        function setTool(tool) {
+            currentTool = tool;
+            document.getElementById('penBtn').classList.toggle('active-tool', tool === 'pen');
+            document.getElementById('eraserBtn').classList.toggle('active-tool', tool === 'eraser');
+            ctx.strokeStyle = (tool === 'pen') ? "#000000" : "#FFFFFF";
+            ctx.lineWidth = (tool === 'pen') ? 3 : 20;
+        }
+
         let drawing = false;
         function startDrawing(e) { drawing = true; draw(e); }
         function stopDrawing() { drawing = false; ctx.beginPath(); }
         function draw(e) {
             if (!drawing) return;
             const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX || e.touches[0].clientX) - rect.left;
-            const y = (e.clientY || e.touches[0].clientY) - rect.top;
-            ctx.lineTo(x, y); ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.stroke();
+            const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+            const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
+            ctx.lineTo(x, y); ctx.lineCap = 'round'; ctx.stroke();
         }
         canvas.addEventListener('mousedown', startDrawing); canvas.addEventListener('mousemove', draw); canvas.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('touchstart', startDrawing); canvas.addEventListener('touchmove', draw); canvas.addEventListener('touchend', stopDrawing);
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); });
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
+        canvas.addEventListener('touchend', stopDrawing);
 
-        function clearCanvas() { fillWhite(); }
+        function clearCanvas() { fillWhite(); setTool(currentTool); }
 
         function sendData() {
             const input = document.getElementById('answerInput').value;
-            const secretData = `||secret:${input.split('　').filter(s => s).join(',')}||`;
+            // 答えの後にIDを隠しデータとして付与
+            const secretData = `||secret:${input.split('　').filter(s => s).join(',')}||author:${userId}||`;
 
             canvas.toBlob(blob => {
                 const formData = new FormData();
