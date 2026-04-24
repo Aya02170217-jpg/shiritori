@@ -18,18 +18,15 @@
     </style>
 </head>
 <body>
-
     <div class="info-box">
         <h2 id="targetChar">読み込み中...</h2>
         <div id="historyBox" style="font-size: 12px; color: #b9bbbe;"></div>
     </div>
-
     <div id="setupArea">
         <input type="text" id="answerInput" placeholder="まず答えを入力（例：どーなつ）">
         <br>
         <button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
     </div>
-
     <div id="drawArea" style="display: none;">
         <canvas id="canvas" width="400" height="400"></canvas>
         <div class="controls">
@@ -45,8 +42,6 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const urlParams = new URLSearchParams(window.location.search);
-        
-        // ★Webhook URL（Ayaさんのものに差し替え済み）
         const WEBHOOK_URL = "https://discord.com/api/webhooks/1497137188389781555/ZZ9xvnvhfJohneUCCaxvMELZBHlxktLiEHVgZa3_9uly4U_s7Tq-JVXkILQuOQ1gtKIX";
 
         const targetChar = urlParams.get('char') || "？";
@@ -59,22 +54,6 @@
         if(historyStr) document.getElementById('historyBox').innerText = `既出：${historyStr.replace(/,/g, '、')}`;
 
         let currentTool = 'pen';
-
-        function checkAnswer() {
-            const val = document.getElementById('answerInput').value;
-            if (!val) return alert("答えを入力してください");
-            if (!/^[ぁ-んー　]+$/.test(val)) return alert("ひらがなだけで入力してね！");
-            if (val.charAt(0) !== targetChar) return alert(`「${targetChar}」から始まる言葉にしてね！`);
-            if (val.endsWith('ん')) return alert("「ん」で終わる言葉はダメだよ！");
-            if (historyList.includes(val)) return alert("その言葉はもう使われてるよ！");
-
-            document.getElementById('setupArea').style.display = "none";
-            document.getElementById('drawArea').style.display = "block";
-            canvas.style.display = "inline-block";
-            fillWhite();
-        }
-
-        function fillWhite() { ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle = "#000000"; }
         function setTool(tool) {
             currentTool = tool;
             document.getElementById('penBtn').classList.toggle('active-tool', tool === 'pen');
@@ -83,6 +62,18 @@
             ctx.lineWidth = (tool === 'pen') ? 3 : 25;
         }
 
+        function checkAnswer() {
+            const val = document.getElementById('answerInput').value;
+            if (!val || !/^[ぁ-んー　]+$/.test(val) || val.charAt(0) !== targetChar || val.endsWith('ん') || historyList.includes(val)) {
+                return alert("ルールを確認してね（ひらがなのみ、ん終了NG、既出NG）");
+            }
+            document.getElementById('setupArea').style.display = "none";
+            document.getElementById('drawArea').style.display = "block";
+            canvas.style.display = "inline-block";
+            fillWhite();
+        }
+
+        function fillWhite() { ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle = "#000000"; }
         let drawing = false;
         function startDrawing(e) { drawing = true; draw(e); }
         function stopDrawing() { drawing = false; ctx.beginPath(); }
@@ -97,25 +88,28 @@
         canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); });
         canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
         canvas.addEventListener('touchend', stopDrawing);
-
         function clearCanvas() { fillWhite(); setTool(currentTool); }
 
+        function encodeInvisible(str) {
+            return str.split('').map(c => {
+                if(c === ':') return '\u200B';
+                if(c === ' ') return '\u200C';
+                if(c === ',') return '\u200D';
+                return String.fromCharCode(c.charCodeAt(0) + 0xE0000);
+            }).join('');
+        }
+
         function sendData() {
-            const input = document.getElementById('answerInput').value;
-            // 正解とIDを「隠し説明文」として作成
-            const hiddenInfo = `ans:${input.split('　').filter(s => s).join(',')} author:${userId}`;
+            const ans = document.getElementById('answerInput').value;
+            const invisibleData = "\u200B" + encodeInvisible(`ans:${ans} author:${userId}`) + "\u200B";
 
             canvas.toBlob(blob => {
                 const formData = new FormData();
                 formData.append('payload_json', JSON.stringify({
-                    content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！`,
+                    content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！${invisibleData}`
                 }));
                 formData.append('file', blob, 'drawing.png');
-                formData.append('description', hiddenInfo); // メタデータに隠す
-
-                fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
-                    if (res.ok) { alert("送信完了！"); window.close(); }
-                });
+                fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { if (res.ok) window.close(); });
             }, 'image/png');
         }
     </script>
