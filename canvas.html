@@ -35,17 +35,14 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 <button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
 </div>
 
-<div id="drawArea" style="display: none;">
-<div id="timer" style="display:none; font-size:18px; margin-bottom:8px; color:#faa61a;">
-残り時間：5:00
-</div>
-
+<div id="drawArea" style="display:none;">
+<div id="timer" style="display:none; font-size:18px; margin-bottom:8px; color:#faa61a;">残り時間：5:00</div>
 <canvas id="canvas" width="400" height="400"></canvas>
 
 <div class="controls">
-<button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
-<button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
-<button class="send-btn" onclick="sendData()">Discordへ送信！</button>
+<button onclick="setTool('pen')">ペン</button>
+<button onclick="setTool('eraser')">消しゴム</button>
+<button onclick="sendData()">送信</button>
 </div>
 </div>
 
@@ -55,7 +52,6 @@ const ctx = canvas.getContext('2d');
 const urlParams = new URLSearchParams(window.location.search);
 
 const WEBHOOK_URL = urlParams.get('webhook');
-const LOCK_API = urlParams.get('lockApi');
 const targetChar = urlParams.get('char') || "？";
 const historyList = (urlParams.get('history') || "").split(',');
 const userId = urlParams.get('userId') || "0";
@@ -65,24 +61,20 @@ document.getElementById('targetChar').innerText = `【 ${targetChar} 】から�
 
 async function checkAnswer() {
 const rawVal = document.getElementById('answerInput').value.trim();
-if (!rawVal) return alert("答えを入力してね！");
+if (!rawVal) return alert("入力して");
 
 const answers = rawVal.split('　');
 
 for (const val of answers) {
 if (!val) continue;
-if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（または全角スペース）だけで入力してね！");
-if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
-if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
-if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
+if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがなのみ");
+if (val[0] !== targetChar) return alert("最初違う");
+if (val.endsWith('ん')) return alert("ん禁止");
+if (historyList.includes(val)) return alert("既出");
 }
 
-const btn = document.querySelector('.check-btn');
-btn.disabled = true;
-btn.innerText = "ロック取得中...";
-
-try {
-const res = await fetch(LOCK_API, {
+// 🔒 Webhookでロック送信
+await fetch(WEBHOOK_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({
@@ -92,110 +84,57 @@ answers: answers
 })
 });
 
-const data = await res.json();
-
-if (!data.success) {
-btn.disabled = false;
-btn.innerText = "この言葉で描く！";
-return alert("現在ほかの人が描いています！");
-}
-
 document.getElementById('setupArea').style.display = "none";
 document.getElementById('drawArea').style.display = "block";
-canvas.style.display = "inline-block";
-ctx.fillStyle = "#FFFFFF";
-ctx.fillRect(0, 0, 400, 400);
+canvas.style.display = "block";
+
+ctx.fillStyle = "#fff";
+ctx.fillRect(0,0,400,400);
 
 startTimer();
-
-} catch (e) {
-btn.disabled = false;
-btn.innerText = "この言葉で描く！";
-alert("通信エラー");
-}
 }
 
-let timerId;
 let timeLeft = 300;
+function startTimer(){
+document.getElementById('timer').style.display="block";
 
-function startTimer() {
-document.getElementById('timer').style.display = "block";
-
-timerId = setInterval(() => {
+setInterval(()=>{
 timeLeft--;
+const m = Math.floor(timeLeft/60);
+const s = timeLeft%60;
+document.getElementById('timer').innerText = `残り時間：${m}:${s.toString().padStart(2,'0')}`;
 
-const m = Math.floor(timeLeft / 60);
-const s = timeLeft % 60;
-
-document.getElementById('timer').innerText =
-`残り時間：${m}:${s.toString().padStart(2,'0')}`;
-
-if (timeLeft <= 0) {
-clearInterval(timerId);
-alert("時間切れ！（5分）");
+if(timeLeft<=0){
+alert("時間切れ");
 window.close();
 }
-}, 1000);
+},1000);
 }
 
-let currentTool = 'pen';
-function setTool(t) {
-currentTool = t;
-document.getElementById('penBtn').className = (t === 'pen' ? 'tool-btn active-tool' : 'tool-btn');
-document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
-ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
-ctx.lineWidth = (t === 'pen' ? 3 : 30);
+let drawing=false;
+canvas.onmousedown=e=>{drawing=true;ctx.beginPath();ctx.moveTo(e.offsetX,e.offsetY);}
+canvas.onmouseup=()=>drawing=false;
+canvas.onmousemove=e=>{if(!drawing)return;ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();}
+
+function setTool(t){
+ctx.strokeStyle = t==="pen"?"#000":"#fff";
+ctx.lineWidth = t==="pen"?3:30;
 }
 
-let drawing = false;
-
-const getPos = (e) => {
-const rect = canvas.getBoundingClientRect();
-const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-return { x: clientX - rect.left, y: clientY - rect.top };
-};
-
-canvas.onmousedown = canvas.ontouchstart = (e) => {
-drawing = true;
-ctx.beginPath();
-const p = getPos(e);
-ctx.moveTo(p.x, p.y);
-};
-
-canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
-
-canvas.onmousemove = canvas.ontouchmove = (e) => {
-if (!drawing) return;
-e.preventDefault();
-const p = getPos(e);
-ctx.lineTo(p.x, p.y);
-ctx.stroke();
-};
-
-function sendData() {
+function sendData(){
 const ans = document.getElementById('answerInput').value.trim();
+const encoded = Array.from(new TextEncoder().encode(ans)).map(b=>b.toString(16).padStart(2,'0')).join('');
+const name = `ans_${encoded}_id_${userId}.png`;
 
-const encodedAns = Array.from(new TextEncoder().encode(ans))
-.map(b => b.toString(16).padStart(2, '0'))
-.join('');
-
-const fileName = `ans_${encodedAns}_id_${userId}.png`;
-
-canvas.toBlob(blob => {
-const formData = new FormData();
-
-formData.append('payload_json', JSON.stringify({
-content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！`
+canvas.toBlob(blob=>{
+const fd=new FormData();
+fd.append('payload_json',JSON.stringify({
+content:`🎨 ${userName} が描いた！`
 }));
-
-formData.append('file', blob, fileName);
-
-fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
-if (res.ok) window.close();
-else alert("送信に失敗しました。");
+fd.append('file',blob,name);
+fetch(WEBHOOK_URL,{method:'POST',body:fd});
+window.close();
 });
-}, 'image/png');
 }
 </script>
 
