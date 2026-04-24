@@ -2,10 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>お絵描きしりとり</title>
+<title>お絵描きしりとりキャンバス</title>
 <style>
 body { background-color: #2c2f33; color: white; text-align: center; font-family: sans-serif; padding: 10px; }
-canvas { background: #FFFFFF; border: 5px solid #555; border-radius: 10px; display: none; touch-action: none; }
+canvas { background: #FFFFFF; border: 5px solid #555; cursor: crosshair; border-radius: 10px; display: none; touch-action: none; }
+.controls { margin-top: 15px; }
 input { padding: 12px; border-radius: 5px; border: none; width: 300px; font-size: 16px; margin-bottom: 10px; color: #000; }
 button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
 .check-btn { background-color: #43b581; color: white; }
@@ -17,38 +18,56 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 </head>
 <body>
 <h2 id="targetChar">読み込み中...</h2>
+
 <div id="setupArea">
 <div class="rule-box">
-<b style="color: #faa61a;">【ルール】</b><br>
+<b style="color: #faa61a;">【しりとりルール】</b><br>
 ・5分以内に送信してね！<br>
-・ひらがなのみ（「ー」対応）<br>
-・複数回答は<b style="color: #ff4747;">全角スペース</b>
+・ひらがなだけで入力してね！<br>
+・「ー」で終わる時は、その前の文字からスタート！<br>
+　（例：かれー → れ）<br>
+・「ゃ・ゅ・ょ・っ」等の小文字は、大きい文字になるよ！<br>
+・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね<br>
+　（例：どーなつ　どーなっつ）
 </div>
-<input type="text" id="answerInput" placeholder="答えを入力">
+<input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
 <br>
-<button class="check-btn" onclick="startDrawing()">お絵描き開始！</button>
+<button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
 </div>
+
 <div id="drawArea" style="display: none;">
 <canvas id="canvas" width="400" height="400"></canvas>
 <div class="controls">
 <button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
 <button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
-<button class="send-btn" onclick="sendData()">送信！</button>
+<button class="send-btn" onclick="sendData()">Discordへ送信！</button>
 </div>
 </div>
+
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const urlParams = new URLSearchParams(window.location.search);
 const WEBHOOK_URL = urlParams.get('webhook');
 const targetChar = urlParams.get('char') || "？";
+const historyList = (urlParams.get('history') || "").split(',');
 const userId = urlParams.get('userId') || "0";
 const userName = urlParams.get('user') || "ななし";
-document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵`;
 
-function startDrawing() {
-    const val = document.getElementById('answerInput').value.trim();
-    if (!val || !/^[ぁ-んー　]+$/.test(val)) return alert("ひらがなで入力してね！");
+// Ayaさんのオリジナル表示
+document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
+
+function checkAnswer() {
+    const rawVal = document.getElementById('answerInput').value.trim();
+    if (!rawVal) return alert("答えを入力してね！");
+    const answers = rawVal.split('　'); // 全角スペース分割
+    for (const val of answers) {
+        if (!val) continue;
+        if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（または全角スペース）だけで入力してね！");
+        if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
+        if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
+        if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
+    }
     document.getElementById('setupArea').style.display = "none";
     document.getElementById('drawArea').style.display = "block";
     canvas.style.display = "inline-block";
@@ -58,19 +77,23 @@ function startDrawing() {
 let currentTool = 'pen';
 function setTool(t) {
     currentTool = t;
+    document.getElementById('penBtn').className = (t === 'pen' ? 'tool-btn active-tool' : 'tool-btn');
+    document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
     ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
     ctx.lineWidth = (t === 'pen' ? 3 : 30);
 }
 
 let drawing = false;
-canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); };
+const getPos = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+};
+canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); };
 canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
 canvas.onmousemove = canvas.ontouchmove = (e) => {
-    if (!drawing) return; e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
-    ctx.lineTo(x, y); ctx.stroke();
+    if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke();
 };
 
 function sendData() {
@@ -78,10 +101,14 @@ function sendData() {
     const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
     canvas.toBlob(blob => {
         const formData = new FormData();
-        formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName}** さんが描いたよ！` }));
+        formData.append('payload_json', JSON.stringify({
+            content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！`
+        }));
         formData.append('file', blob, `ans_${encodedAns}_id_${userId}.png`);
-        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(() => window.close());
-    });
+        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
+            if (res.ok) window.close();
+        });
+    }, 'image/png');
 }
 </script>
 </body>
