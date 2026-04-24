@@ -24,7 +24,7 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 ・お絵描きの制限時間は5分です<br>
 ・ひらがなだけで入力してね！<br>
 ・「ー」で終わる時は、その前の文字からスタート！<br>
-・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね
+・答えが複数ある時は<b style="color: #ff4747;">全角スペース（　）</b>を空けてね
 </div>
 <input type="text" id="answerInput" placeholder="答えを入力">
 <br>
@@ -55,6 +55,7 @@ document.getElementById('targetChar').innerText = `【 ${targetChar} 】から�
 function checkAndLock() {
     const rawVal = document.getElementById('answerInput').value.trim();
     if (!rawVal) return alert("答えを入力してね！");
+    
     const answers = rawVal.split('　');
     for (const val of answers) {
         if (!val) continue;
@@ -64,25 +65,23 @@ function checkAndLock() {
         if (historyList.includes(val)) return alert("その言葉はもう使われてるよ！");
     }
 
-    // ロックリクエストをBotに送信（Flaskは使わない）
+    // Botにロック合図を送信
     fetch(WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            content: JSON.stringify({ type: "lock_request", userId: userId, userName: userName, ans: rawVal })
+            content: JSON.stringify({ type: "lock", userId: userId, userName: userName, ans: rawVal })
         })
-    });
-
-    // 1.5秒待ってから画面切り替え（Bot側の処理待ち）
-    setTimeout(() => {
+    }).then(() => {
+        // 送信後、画面を切り替え
         document.getElementById('setupArea').style.display = "none";
         document.getElementById('drawArea').style.display = "block";
         canvas.style.display = "inline-block";
         ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, 400, 400);
-    }, 1500);
+    });
 }
 
-// --- お絵描きロジック（ペン・消しゴム） ---
+// --- お絵描きロジック ---
 let currentTool = 'pen';
 function setTool(t) {
     currentTool = t;
@@ -111,7 +110,7 @@ function sendData() {
     const fileName = `ans_${encodedAns}_id_${userId}.png`;
     canvas.toBlob(blob => {
         const formData = new FormData();
-        formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName}** さんがお絵描きしたよ！答えは？` }));
+        formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName}** さんがお絵描きしたよ！答えは何かな？` }));
         formData.append('file', blob, fileName);
         fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { if (res.ok) window.close(); });
     }, 'image/png');
