@@ -46,14 +46,14 @@
         const ctx = canvas.getContext('2d');
         const urlParams = new URLSearchParams(window.location.search);
         
-        // ★Webhook URL
+        // ★Webhook URL（Ayaさんのものに差し替え済み）
         const WEBHOOK_URL = "https://discord.com/api/webhooks/1497137188389781555/ZZ9xvnvhfJohneUCCaxvMELZBHlxktLiEHVgZa3_9uly4U_s7Tq-JVXkILQuOQ1gtKIX";
 
         const targetChar = urlParams.get('char') || "？";
         const historyStr = urlParams.get('history') || "";
         const historyList = historyStr.split(',');
         const userName = urlParams.get('user') || "ななし";
-        const userId = urlParams.get('userId') || "0"; // Botから渡されるID
+        const userId = urlParams.get('userId') || "0";
 
         document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
         if(historyStr) document.getElementById('historyBox').innerText = `既出：${historyStr.replace(/,/g, '、')}`;
@@ -63,11 +63,10 @@
         function checkAnswer() {
             const val = document.getElementById('answerInput').value;
             if (!val) return alert("答えを入力してください");
-            if (!/^[ぁ-んー　]+$/.test(val)) return alert("エラー：ひらがなだけで入力してね！");
-            if (val.startsWith(' ') || val.endsWith(' ')) return alert("端にスペースを入れないでね");
+            if (!/^[ぁ-んー　]+$/.test(val)) return alert("ひらがなだけで入力してね！");
             if (val.charAt(0) !== targetChar) return alert(`「${targetChar}」から始まる言葉にしてね！`);
-            if (val.endsWith('ん')) return alert("「ん」で終わる言葉は使えません！");
-            if (historyList.includes(val)) return alert("その言葉はもう使われています！");
+            if (val.endsWith('ん')) return alert("「ん」で終わる言葉はダメだよ！");
+            if (historyList.includes(val)) return alert("その言葉はもう使われてるよ！");
 
             document.getElementById('setupArea').style.display = "none";
             document.getElementById('drawArea').style.display = "block";
@@ -81,7 +80,7 @@
             document.getElementById('penBtn').classList.toggle('active-tool', tool === 'pen');
             document.getElementById('eraserBtn').classList.toggle('active-tool', tool === 'eraser');
             ctx.strokeStyle = (tool === 'pen') ? "#000000" : "#FFFFFF";
-            ctx.lineWidth = (tool === 'pen') ? 3 : 20;
+            ctx.lineWidth = (tool === 'pen') ? 3 : 25;
         }
 
         let drawing = false;
@@ -103,15 +102,17 @@
 
         function sendData() {
             const input = document.getElementById('answerInput').value;
-            // 答えの後にIDを隠しデータとして付与
-            const secretData = `||secret:${input.split('　').filter(s => s).join(',')}||author:${userId}||`;
+            // 正解とIDを「隠し説明文」として作成
+            const hiddenInfo = `ans:${input.split('　').filter(s => s).join(',')} author:${userId}`;
 
             canvas.toBlob(blob => {
                 const formData = new FormData();
                 formData.append('payload_json', JSON.stringify({
-                    content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！\n${secretData}`,
+                    content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！`,
                 }));
                 formData.append('file', blob, 'drawing.png');
+                formData.append('description', hiddenInfo); // メタデータに隠す
+
                 fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
                     if (res.ok) { alert("送信完了！"); window.close(); }
                 });
