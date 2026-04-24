@@ -5,35 +5,29 @@
     <title>お絵描きしりとりキャンバス</title>
     <style>
         body { background-color: #2c2f33; color: white; text-align: center; font-family: sans-serif; padding: 10px; }
-        canvas { background: #FFFFFF; border: 5px solid #555; cursor: crosshair; touch-action: none; border-radius: 10px; display: none; }
+        canvas { background: #FFFFFF; border: 5px solid #555; cursor: crosshair; border-radius: 10px; display: none; touch-action: none; }
         .controls { margin-top: 15px; }
         input { padding: 12px; border-radius: 5px; border: none; width: 300px; font-size: 16px; margin-bottom: 10px; }
         button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
         .check-btn { background-color: #43b581; color: white; }
         .send-btn { background-color: #5865f2; color: white; }
-        .clear-btn { background-color: #ed4245; color: white; }
         .tool-btn { background-color: #4f545c; color: white; }
         .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
-        .info-box { background: #23272a; padding: 10px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #5865f2; }
     </style>
 </head>
 <body>
-    <div class="info-box">
-        <h2 id="targetChar">読み込み中...</h2>
-        <div id="historyBox" style="font-size: 12px; color: #b9bbbe;"></div>
-    </div>
+    <h2 id="targetChar">読み込み中...</h2>
     <div id="setupArea">
-        <input type="text" id="answerInput" placeholder="まず答えを入力（例：どーなつ）">
+        <input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
         <br>
         <button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
     </div>
+
     <div id="drawArea" style="display: none;">
         <canvas id="canvas" width="400" height="400"></canvas>
         <div class="controls">
             <button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
             <button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
-            <button class="clear-btn" onclick="clearCanvas()">全消去</button>
-            <br><br>
             <button class="send-btn" onclick="sendData()">Discordへ送信！</button>
         </div>
     </div>
@@ -42,74 +36,63 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const urlParams = new URLSearchParams(window.location.search);
-        const WEBHOOK_URL = "https://discord.com/api/webhooks/1497137188389781555/ZZ9xvnvhfJohneUCCaxvMELZBHlxktLiEHVgZa3_9uly4U_s7Tq-JVXkILQuOQ1gtKIX";
+        
+        // ★重要：Botが動いているPCの「窓口」
+        const BOT_ENDPOINT = "http://localhost:8000/upload"; 
 
         const targetChar = urlParams.get('char') || "？";
-        const historyStr = urlParams.get('history') || "";
-        const historyList = historyStr.split(',');
-        const userName = urlParams.get('user') || "ななし";
+        const historyList = (urlParams.get('history') || "").split(',');
         const userId = urlParams.get('userId') || "0";
+        const userName = urlParams.get('user') || "ななし";
 
         document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
-        if(historyStr) document.getElementById('historyBox').innerText = `既出：${historyStr.replace(/,/g, '、')}`;
-
-        let currentTool = 'pen';
-        function setTool(tool) {
-            currentTool = tool;
-            document.getElementById('penBtn').classList.toggle('active-tool', tool === 'pen');
-            document.getElementById('eraserBtn').classList.toggle('active-tool', tool === 'eraser');
-            ctx.strokeStyle = (tool === 'pen') ? "#000000" : "#FFFFFF";
-            ctx.lineWidth = (tool === 'pen') ? 3 : 25;
-        }
 
         function checkAnswer() {
             const val = document.getElementById('answerInput').value;
-            if (!val || !/^[ぁ-んー　]+$/.test(val) || val.charAt(0) !== targetChar || val.endsWith('ん') || historyList.includes(val)) {
-                return alert("ルールを確認してね（ひらがなのみ、ん終了NG、既出NG）");
-            }
+            if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがなだけで入力してね！");
+            if (val.charAt(0) !== targetChar) return alert(`「${targetChar}」から始まる言葉にしてね！`);
+            if (val.endsWith('ん')) return alert("「ん」で終わる言葉は使えないよ！");
+            if (historyList.includes(val)) return alert("その言葉はもう使われてるよ！");
+
             document.getElementById('setupArea').style.display = "none";
             document.getElementById('drawArea').style.display = "block";
             canvas.style.display = "inline-block";
-            fillWhite();
+            ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, 400, 400);
         }
 
-        function fillWhite() { ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle = "#000000"; }
+        let currentTool = 'pen';
+        function setTool(t) {
+            currentTool = t;
+            document.getElementById('penBtn').className = (t === 'pen' ? 'tool-btn active-tool' : 'tool-btn');
+            document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
+            ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
+            ctx.lineWidth = (t === 'pen' ? 3 : 30);
+        }
+
         let drawing = false;
-        function startDrawing(e) { drawing = true; draw(e); }
-        function stopDrawing() { drawing = false; ctx.beginPath(); }
-        function draw(e) {
+        canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); };
+        canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
+        canvas.onmousemove = canvas.ontouchmove = (e) => {
             if (!drawing) return;
+            e.preventDefault();
             const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
-            const y = (e.clientY || (e.touches && e.touches[0].clientY)) - rect.top;
-            ctx.lineTo(x, y); ctx.lineCap = 'round'; ctx.stroke();
-        }
-        canvas.addEventListener('mousedown', startDrawing); canvas.addEventListener('mousemove', draw); canvas.addEventListener('mouseup', stopDrawing);
-        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDrawing(e); });
-        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); draw(e); });
-        canvas.addEventListener('touchend', stopDrawing);
-        function clearCanvas() { fillWhite(); setTool(currentTool); }
-
-        function encodeInvisible(str) {
-            return str.split('').map(c => {
-                if(c === ':') return '\u200B';
-                if(c === ' ') return '\u200C';
-                if(c === ',') return '\u200D';
-                return String.fromCharCode(c.charCodeAt(0) + 0xE0000);
-            }).join('');
-        }
+            const x = (e.clientX || e.touches[0].clientX) - rect.left;
+            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+            ctx.lineTo(x, y); ctx.stroke();
+        };
 
         function sendData() {
-            const ans = document.getElementById('answerInput').value;
-            const invisibleData = "\u200B" + encodeInvisible(`ans:${ans} author:${userId}`) + "\u200B";
-
             canvas.toBlob(blob => {
                 const formData = new FormData();
-                formData.append('payload_json', JSON.stringify({
-                    content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！${invisibleData}`
-                }));
-                formData.append('file', blob, 'drawing.png');
-                fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { if (res.ok) window.close(); });
+                formData.append('file', blob);
+                formData.append('answer', document.getElementById('answerInput').value);
+                formData.append('userId', userId);
+                formData.append('userName', userName);
+
+                fetch(BOT_ENDPOINT, { method: 'POST', body: formData })
+                .then(res => res.json())
+                .then(data => { if(data.status === "ok") window.close(); })
+                .catch(err => alert("Botが起動していないか、接続できませんでした。"));
             }, 'image/png');
         }
     </script>
