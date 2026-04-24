@@ -4,179 +4,118 @@
 <meta charset="UTF-8">
 <title>お絵描きしりとり</title>
 <style>
-body {
-    background-color: #2c2f33;
-    color: white;
-    text-align: center;
-    font-family: sans-serif;
-}
-
-canvas {
-    background: #fff;
-    border: 5px solid #555;
-    border-radius: 10px;
-    display: none;
-    margin: 20px auto;
-}
-
-.controls {
-    text-align: center;
-}
-
-button {
-    padding: 10px 20px;
-    margin: 5px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-}
-
-.rule-box {
-    background: #36393f;
-    padding: 15px;
-    border-radius: 8px;
-    margin: 10px auto;
-    max-width: 350px;
-    text-align: left;
-}
+body { background-color: #2c2f33; color: white; text-align: center; font-family: sans-serif; padding: 10px; }
+canvas { background: #FFFFFF; border: 5px solid #555; border-radius: 10px; display: none; touch-action: none; }
+input { padding: 12px; border-radius: 5px; border: none; width: 300px; font-size: 16px; margin-bottom: 10px; color: #000; }
+button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
+.check-btn { background-color: #43b581; color: white; }
+.send-btn { background-color: #5865f2; color: white; }
+.tool-btn { background-color: #4f545c; color: white; }
+.active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
+.rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
 </style>
 </head>
-
 <body>
-
 <h2 id="targetChar">読み込み中...</h2>
-<div id="timer" style="color: orange; font-size: 20px;"></div>
 
 <div id="setupArea">
-
 <div class="rule-box">
 <b style="color: #faa61a;">【しりとりルール】</b><br>
-・お絵描き制限時間は5分<br>
+・お絵描きの制限時間は5分です<br>
 ・ひらがなだけで入力してね！<br>
 ・「ー」で終わる時は、その前の文字からスタート！<br>
-・「ゃ・ゅ・ょ・っ」等の小文字は、大きい文字になるよ！<br>
-・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね<br>
+・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね
 </div>
-
-<input id="answerInput" placeholder="答え入力">
+<input type="text" id="answerInput" placeholder="答えを入力">
 <br>
-<button onclick="checkAnswer()">この言葉で描く！</button>
-
+<button id="lockBtn" class="check-btn" onclick="checkAndLock()">この言葉で描く！</button>
 </div>
 
-<div id="drawArea" style="display:none;">
+<div id="drawArea" style="display: none;">
 <canvas id="canvas" width="400" height="400"></canvas>
-
 <div class="controls">
-<button onclick="setTool('pen')">ペン</button>
-<button onclick="setTool('eraser')">消しゴム</button>
-<button onclick="sendData()">送信</button>
+<button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
+<button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
+<button class="send-btn" onclick="sendData()">Discordへ送信！</button>
 </div>
 </div>
 
 <script>
-
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-
 const urlParams = new URLSearchParams(window.location.search);
-
-const targetChar = urlParams.get('char') || "あ";
+const WEBHOOK_URL = urlParams.get('webhook');
+const targetChar = urlParams.get('char') || "？";
 const historyList = (urlParams.get('history') || "").split(',');
 const userId = urlParams.get('userId') || "0";
-const userName = urlParams.get('user') || "名無し";
+const userName = urlParams.get('user') || "ななし";
 
 document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
 
-let timerInterval;
+function checkAndLock() {
+    const rawVal = document.getElementById('answerInput').value.trim();
+    if (!rawVal) return alert("答えを入力してね！");
+    const answers = rawVal.split('　');
+    for (const val of answers) {
+        if (!val) continue;
+        if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがなだけで入力してね！");
+        if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
+        if (val.endsWith('ん')) return alert("「ん」で終わる言葉はダメだよ！");
+        if (historyList.includes(val)) return alert("その言葉はもう使われてるよ！");
+    }
 
-function startTimer() {
-let time = 300;
+    // ロックリクエストをBotに送信（Flaskは使わない）
+    fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            content: JSON.stringify({ type: "lock_request", userId: userId, userName: userName, ans: rawVal })
+        })
+    });
 
-timerInterval = setInterval(() => {
-time--;
-let m = Math.floor(time/60);
-let s = time % 60;
-
-document.getElementById('timer').innerText = `残り時間：${m}:${s.toString().padStart(2,'0')}`;
-
-if(time <= 0){
-clearInterval(timerInterval);
-alert("時間切れ！");
-location.reload();
-}
-},1000);
-}
-
-function checkAnswer() {
-
-const rawVal = document.getElementById('answerInput').value.trim();
-if (!rawVal) return alert("入力して");
-
-const answers = rawVal.split('　');
-
-for (const val of answers) {
-if (!val) continue;
-
-if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがなだけ");
-if (val.charAt(0) !== targetChar) return alert(`${val} は ${targetChar} から始めて`);
-if (val.endsWith('ん')) return alert(`${val} は使えない`);
-if (historyList.includes(val)) return alert(`${val} は既出`);
+    // 1.5秒待ってから画面切り替え（Bot側の処理待ち）
+    setTimeout(() => {
+        document.getElementById('setupArea').style.display = "none";
+        document.getElementById('drawArea').style.display = "block";
+        canvas.style.display = "inline-block";
+        ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, 400, 400);
+    }, 1500);
 }
 
-fetch("http://127.0.0.1:5000/lock", {
-method: "POST",
-headers: { "Content-Type": "application/json" },
-body: JSON.stringify({ userId: userId })
-})
-.then(res => res.json())
-.then(res => {
-
-if(res.status !== "OK"){
-alert("今は他の人が描いています！");
-return;
-}
-
-document.getElementById('setupArea').style.display = "none";
-document.getElementById('drawArea').style.display = "block";
-canvas.style.display = "block";
-
-ctx.fillStyle = "#fff";
-ctx.fillRect(0,0,400,400);
-
-startTimer();
-
-});
+// --- お絵描きロジック（ペン・消しゴム） ---
+let currentTool = 'pen';
+function setTool(t) {
+    currentTool = t;
+    document.getElementById('penBtn').className = (t === 'pen' ? 'tool-btn active-tool' : 'tool-btn');
+    document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
+    ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
+    ctx.lineWidth = (t === 'pen' ? 3 : 30);
 }
 
 let drawing = false;
-
-canvas.onmousedown = () => drawing = true;
-canvas.onmouseup = () => drawing = false;
-canvas.onmousemove = (e) => {
-if(!drawing) return;
-ctx.lineTo(e.offsetX, e.offsetY);
-ctx.stroke();
+const getPos = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+};
+canvas.onmousedown = canvas.ontouchstart = (e) => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); };
+canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
+canvas.onmousemove = canvas.ontouchmove = (e) => {
+    if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke();
 };
 
-function setTool(tool){
-ctx.strokeStyle = tool === 'pen' ? "#000" : "#fff";
-ctx.lineWidth = tool === 'pen' ? 3 : 30;
+function sendData() {
+    const ans = document.getElementById('answerInput').value.trim();
+    const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const fileName = `ans_${encodedAns}_id_${userId}.png`;
+    canvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName}** さんがお絵描きしたよ！答えは？` }));
+        formData.append('file', blob, fileName);
+        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { if (res.ok) window.close(); });
+    }, 'image/png');
 }
-
-function sendData(){
-
-fetch("http://127.0.0.1:5000/unlock", {
-method: "POST",
-headers: { "Content-Type": "application/json" },
-body: JSON.stringify({ userId: userId })
-});
-
-alert("送信した！");
-location.reload();
-}
-
 </script>
-
 </body>
 </html>
