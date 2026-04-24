@@ -13,12 +13,13 @@
         .send-btn { background-color: #5865f2; color: white; }
         .tool-btn { background-color: #4f545c; color: white; }
         .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
+        /* ルールボックスのスタイル */
         .rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
     </style>
 </head>
 <body>
     <h2 id="targetChar">読み込み中...</h2>
-    
+
     <div id="setupArea">
         <div class="rule-box">
             <b style="color: #faa61a;">【しりとりルール】</b><br>
@@ -26,8 +27,8 @@
             ・「ー」で終わる時は、その前の文字からスタート！<br>
             　（例：かれー → れ）<br>
             ・「ゃ・ゅ・ょ・っ」等の小文字は、大きい文字になるよ！<br>
-            ・答えが複数ある時はスペースを空けてね<br>
-            　（例：どーなつ どーなっつ）
+            ・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね<br>
+            　（例：どーなつ　どーなっつ）
         </div>
         <input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
         <br>
@@ -60,12 +61,13 @@
             const rawVal = document.getElementById('answerInput').value.trim();
             if (!rawVal) return alert("答えを入力してね！");
             
-            // スペース区切りの入力を配列にする
-            const answers = rawVal.split(/\s+/);
+            // 全角スペースだけで分割するように修正
+            const answers = rawVal.split('　');
             
             for (const val of answers) {
-                if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（またはスペース）だけで入力してね！");
-                if (val.charAt(0) !== targetChar) return alert(`「${val}」が「${targetChar}」から始まっていないよ！`);
+                if (!val) continue; // 連続した全角スペース対策
+                if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがな（または全角スペース）だけで入力してね！");
+                if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
                 if (val.endsWith('ん')) return alert(`「${val}」は「ん」で終わるから使えないよ！`);
                 if (historyList.includes(val)) return alert(`「${val}」はもう使われてるよ！`);
             }
@@ -103,7 +105,7 @@
 
         function sendData() {
             const ans = document.getElementById('answerInput').value.trim();
-            // 答えを16進数に変換（スペースも含めて暗号化し、Bot側でsplitする）
+            // 答えを16進数に変換
             const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
             const fileName = `ans_${encodedAns}_id_${userId}.png`;
 
