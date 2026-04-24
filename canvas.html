@@ -16,7 +16,7 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
 .clear-btn { background-color: #dc3545; color: white; }
 .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
 .rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
-#errorArea { display: none; margin-top: 100px; padding: 30px; background: #dc3545; color: white; border-radius: 10px; font-size: 24px; font-weight: bold; width: 80%; margin-left: auto; margin-right: auto; }
+#errorArea { display: none; margin-top: 100px; padding: 30px; background: #dc3545; color: white; border-radius: 10px; font-size: 20px; font-weight: bold; width: 85%; margin-left: auto; margin-right: auto; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -43,7 +43,7 @@ button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; 
     <div class="controls">
         <button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
         <button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
-        <button class="clear-btn" onclick="clearCanvas()">すべてを削除</button>
+        <button class="clear-btn" onclick="clearCanvas()">すべて削除</button>
         <button class="send-btn" onclick="sendData()">Discordへ送信！</button>
     </div>
 </div>
@@ -59,21 +59,23 @@ const historyList = (urlParams.get('history') || "").split(',');
 const startParam = urlParams.get('start');
 const startTime = startParam ? parseInt(startParam) : Math.floor(Date.now() / 1000);
 
+// --- RenderのURLに修正済み ---
+const BOT_API_BASE = "https://shiritori-bot-l248.onrender.com";
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 let isSubmitted = false;
 let countdown;
 
-// --- 鉄壁ガード：Botに問い合わせ ---
 async function init() {
     if (!userId || !token) {
-        showFatalError("URLが正しくありません。");
+        showFatalError("URLが正しくありません。<br>Discordのボタンから生成されたURLを使ってください。");
         return;
     }
 
     try {
-        // BotのAPIに確認（localhost部分はBotを動かしているPCの状況に合わせてください）
-        const response = await fetch(`http://localhost:8080/check?userId=${userId}&token=${token}`);
+        // Render上のBotに確認しにいく
+        const response = await fetch(`${BOT_API_BASE}/check?userId=${userId}&token=${token}`);
         const data = await response.json();
 
         if (data.allowed) {
@@ -84,7 +86,7 @@ async function init() {
             showFatalError("アクセス権がありません。<br>他の人が挑戦中か、古いURLです。");
         }
     } catch (e) {
-        showFatalError("サーバー（Bot）に接続できません。<br>Botが起動しているか確認してください。");
+        showFatalError("サーバー（Bot）に接続できませんでした。<br>Botが起動していないか、スリープ中の可能性があります。<br>少し待ってから再読み込みしてみてください。");
     }
 }
 
@@ -139,10 +141,12 @@ function setTool(t) {
     document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
     ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
     ctx.lineWidth = (t === 'pen' ? 3 : 30);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
 }
 
 function clearCanvas() {
-    if(confirm("すべて削除しますか？")) {
+    if(confirm("描いた絵をすべて消しますか？")) {
         ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 }
@@ -152,7 +156,7 @@ const getPos = (e) => {
     const rect = canvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
+    return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
 };
 canvas.onmousedown = canvas.ontouchstart = (e) => { 
     drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); 
@@ -182,11 +186,12 @@ function sendData() {
             } else {
                 alert("送信に失敗しました。");
             }
+        }).catch(err => {
+            alert("Discordへの接続に失敗しました。");
         });
     }, 'image/png');
 }
 
-// 起動
 init();
 </script>
 </body>
