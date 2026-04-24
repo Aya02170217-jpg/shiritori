@@ -30,8 +30,7 @@ game_state = {
     "current_channel_id": None,
     "turn": 0,
     "active_token": None,
-    "url_msg_id": None,
-    "webhook_url": ""  # Webhookをここに保持
+    "url_msg_id": None
 }
 
 # --- サーバー設定 ---
@@ -99,21 +98,24 @@ class ShiritoriView(discord.ui.View):
         self.add_item(btn)
 
     async def draw_callback(self, interaction: discord.Interaction):
+        # 【重要】Renderが重くてもエラーにならないよう、Discordに応答を待たせる
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except:
+            pass
+
         if game_state["is_locked"] and (time.time() - game_state["lock_time"] > 300):
             game_state["is_locked"] = False
             await cleanup_url_message()
 
         if game_state["is_locked"]:
-            await interaction.response.send_message("現在他の人が挑戦中だよ！", ephemeral=True)
+            await interaction.followup.send("現在他の人が挑戦中だよ！", ephemeral=True)
             return
 
         now = time.time()
         new_token = str(random.randint(100000, 999999))
-
-        # Webhookを取得して保持（URLに含めないための対策）
         webhooks = await interaction.channel.webhooks()
-        if webhooks:
-            game_state["webhook_url"] = webhooks[0].url
+        webhook_url = webhooks[0].url if webhooks else ""
 
         game_state.update({
             "is_locked": True,
@@ -122,26 +124,21 @@ class ShiritoriView(discord.ui.View):
             "current_channel_id": interaction.channel.id,
             "active_token": new_token
         })
-        
-        await interaction.response.edit_message(
-            content=f"🔒 **{interaction.user.display_name}** さんが挑戦中！（最長5分）\n次は【 **{game_state['current_char']}** 】から始まる絵を描いてね！",
-            view=ShiritoriView(disabled=True)
-        )
 
-        # パラメータから「webhook=https://...」を削除。代わりにサーバー側で保持。
-        # これでURLが劇的に短くなり、Discordでリンクが壊れません。
+        # URLパラメータの整理（リンクを壊さないための処理）
         params = {
             "user": interaction.user.display_name,
             "userId": interaction.user.id,
             "char": game_state['current_char'],
             "history": ",".join(game_state["history"]),
+            "webhook": webhook_url,
             "start": int(now),
-            "token": new_token,
-            "webhook": game_state["webhook_url"] # HTML側で必要ならそのまま短くエンコード
+            "token": new_token
         }
+        query_string = urllib.parse.urlencode(params)
+        url = f"{GITHUB_URL.rstrip('/')}/?{query_string}"
         
-        url = f"{GITHUB_URL}/?{urllib.parse.urlencode(params)}"
-        
+        # メッセージ送信
         msg = await interaction.followup.send(f"🎨 **{interaction.user.display_name}** さん専用URL:\n{url}", ephemeral=False)
         game_state["url_msg_id"] = msg.id
         asyncio.create_task(self.timer_task(now))
