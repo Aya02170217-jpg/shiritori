@@ -2,130 +2,147 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>お絵描きしりとりキャンバス</title>
 <style>
-body { background-color: #2c2f33; color: white; text-align: center; font-family: sans-serif; padding: 10px; margin: 0; }
-#timerDisplay { position: fixed; top: 10px; right: 10px; background: #faa61a; color: #000; padding: 5px 10px; border-radius: 5px; font-weight: bold; font-size: 14px; z-index: 100; }
-canvas { background: #FFFFFF; border: 5px solid #555; cursor: crosshair; border-radius: 10px; display: none; touch-action: none; }
-.controls { margin-top: 15px; }
-input { padding: 12px; border-radius: 5px; border: none; width: 300px; font-size: 16px; margin-bottom: 10px; color: #000; }
-button { padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
-.check-btn { background-color: #43b581; color: white; }
+/* 全体のレイアウト調整 */
+body { 
+    background-color: #2c2f33; 
+    color: white; 
+    text-align: center; 
+    font-family: sans-serif; 
+    padding: 10px; 
+    margin: 0; 
+    overflow-x: hidden; /* 横揺れ防止 */
+}
+
+#timerDisplay { 
+    position: fixed; top: 10px; right: 10px; 
+    background: #faa61a; color: #000; 
+    padding: 5px 10px; border-radius: 5px; 
+    font-weight: bold; font-size: 14px; z-index: 100; 
+}
+
+/* キャンバスをレスポンシブに */
+canvas { 
+    background: #FFFFFF; 
+    border: 5px solid #555; 
+    cursor: crosshair; 
+    border-radius: 10px; 
+    display: none; 
+    touch-action: none; /* スマホで描いている時に画面が動かないようにする */
+    max-width: 90vw;    /* 画面幅の90%を超えない */
+    max-height: 50vh;   /* 画面高さの50%を超えない（ボタンが見えなくなるのを防ぐ） */
+    width: 400px; 
+    height: 400px;
+}
+
+.controls { margin-top: 15px; display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+
+input { 
+    padding: 12px; border-radius: 5px; border: none; 
+    width: 80%; max-width: 300px; /* スマホで幅いっぱいに */
+    font-size: 16px; margin-bottom: 10px; color: #000; 
+}
+
+button { 
+    padding: 10px 15px; border-radius: 5px; border: none; 
+    cursor: pointer; font-weight: bold; 
+}
+
+.check-btn { background-color: #43b581; color: white; width: 80%; max-width: 300px; }
 .send-btn { background-color: #5865f2; color: white; }
 .tool-btn { background-color: #4f545c; color: white; }
 .clear-btn { background-color: #dc3545; color: white; }
 .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
-.rule-box { text-align: left; background: #36393f; padding: 15px; border-radius: 8px; margin: 0 auto 15px auto; max-width: 350px; font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; }
-#errorArea { display: none; margin-top: 100px; padding: 30px; background: #dc3545; color: white; border-radius: 10px; font-size: 20px; font-weight: bold; width: 85%; margin-left: auto; margin-right: auto; line-height: 1.5; }
+
+.rule-box { 
+    text-align: left; background: #36393f; 
+    padding: 15px; border-radius: 8px; 
+    margin: 0 auto 15px auto; 
+    width: 90%; max-width: 350px; 
+    font-size: 14px; line-height: 1.6; border: 1px solid #4f545c; 
+}
+
+h2 { font-size: 1.2rem; padding: 0 10px; }
 </style>
 </head>
 <body>
 
 <div id="timerDisplay">残り 05:00</div>
-<h2 id="targetChar">読み込み中...</h2>
-<div id="errorArea"></div>
 
-<div id="setupArea" style="display: none;">
-    <div class="rule-box">
-        <b style="color: #faa61a;">【しりとりルール】</b><br>
-        ・5分以内に送信してね！<br>
-        ・ひらがなだけで入力してね！<br>
-        ・「ー」で終わる時は、その前の文字からスタート！<br>
-        ・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けてね
-    </div>
-    <input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
-    <br>
-    <button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
+<h2 id="targetChar">読み込み中...</h2>
+
+<div id="setupArea">
+<div class="rule-box">
+<b style="color: #faa61a;">【しりとりルール】</b><br>
+・制限時間は5分だよ<br>
+・<b style="color: #ff4747;">ひらがなだけ</b>で入力してね<br>
+・「ー」で終わる時は、その前の文字が次のお題だよ<br>
+（例：かれー→れ）<br>
+・「ゃ・ゅ・ょ・っ」等の小文字で終わる時は、次のお題で大文字になるよ<br>
+・答えが複数ある時は<b style="color: #ff4747;">全角スペース</b>を空けて、登録してね<br>
+（例：どーなつ どーなっつ）
+</div>
+<input type="text" id="answerInput" placeholder="答えを入力（例：りんご）">
+<br>
+<button class="check-btn" onclick="checkAnswer()">この言葉で描く！</button>
 </div>
 
 <div id="drawArea" style="display: none;">
-    <canvas id="canvas" width="400" height="400"></canvas>
-    <div class="controls">
-        <button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
-        <button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消しゴム</button>
-        <button class="clear-btn" onclick="clearCanvas()">すべて削除</button>
-        <button class="send-btn" onclick="sendData()">Discordへ送信！</button>
-    </div>
+<canvas id="canvas" width="400" height="400"></canvas>
+<div class="controls">
+<button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
+<button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消ゴム</button>
+<button class="clear-btn" onclick="clearCanvas()">全消去</button>
+<button class="send-btn" onclick="sendData()">送信！</button>
+</div>
 </div>
 
 <script>
-const urlParams = new URLSearchParams(window.location.search);
-const userId = urlParams.get('userId');
-const token = urlParams.get('token');
-const targetChar = urlParams.get('char') || "？";
-const userName = urlParams.get('user') || "ななし";
-const WEBHOOK_URL = urlParams.get('webhook');
-const historyList = (urlParams.get('history') || "").split(',');
-const startParam = urlParams.get('start');
-const startTime = startParam ? parseInt(startParam) : Math.floor(Date.now() / 1000);
-
-// --- RenderのURLに修正済み ---
-const BOT_API_BASE = "https://shiritori-bot-l248.onrender.com";
-
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const urlParams = new URLSearchParams(window.location.search);
+const WEBHOOK_URL = urlParams.get('webhook');
+const targetChar = urlParams.get('char') || "？";
+const historyList = (urlParams.get('history') || "").split(',');
+const userId = urlParams.get('userId') || "0";
+const userName = urlParams.get('user') || "ななし";
+
+const startParam = urlParams.get('start');
+const startTime = startParam ? parseInt(startParam) : Math.floor(Date.now() / 1000);
+const LIMIT_SEC = 300;
+
+document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
+
+const timerDisplay = document.getElementById('timerDisplay');
 let isSubmitted = false;
-let countdown;
 
-async function init() {
-    if (!userId || !token) {
-        showFatalError("URLが正しくありません。<br>Discordのボタンから生成されたURLを使ってください。");
-        return;
-    }
-
-    try {
-        // Render上のBotに確認しにいく
-        const response = await fetch(`${BOT_API_BASE}/check?userId=${userId}&token=${token}`);
-        const data = await response.json();
-
-        if (data.allowed) {
-            document.getElementById('targetChar').innerText = `【 ${targetChar} 】から始まる絵を描いてね`;
-            document.getElementById('setupArea').style.display = "block";
-            startTimer();
-        } else {
-            showFatalError("アクセス権がありません。<br>他の人が挑戦中か、古いURLです。");
+const countdown = setInterval(() => {
+    const now = Math.floor(Date.now() / 1000);
+    let timeLeft = LIMIT_SEC - (now - startTime);
+    if (timeLeft <= 0) {
+        timeLeft = 0; clearInterval(countdown);
+        if (!isSubmitted) {
+            if (document.getElementById('drawArea').style.display === "block") sendData();
+            else window.close();
         }
-    } catch (e) {
-        showFatalError("サーバー（Bot）に接続できませんでした。<br>Botが起動していないか、スリープ中の可能性があります。<br>少し待ってから再読み込みしてみてください。");
     }
-}
-
-function showFatalError(msg) {
-    document.getElementById('targetChar').style.display = "none";
-    document.getElementById('timerDisplay').style.display = "none";
-    const err = document.getElementById('errorArea');
-    err.innerHTML = msg;
-    err.style.display = "block";
-}
-
-function startTimer() {
-    const timerDisplay = document.getElementById('timerDisplay');
-    countdown = setInterval(() => {
-        const now = Math.floor(Date.now() / 1000);
-        let timeLeft = 300 - (now - startTime);
-        if (timeLeft <= 0) {
-            timeLeft = 0;
-            clearInterval(countdown);
-            if (!isSubmitted) {
-                if (document.getElementById('drawArea').style.display === "block") sendData();
-                else showFatalError("時間切れです。");
-            }
-        }
-        const m = Math.floor(timeLeft / 60);
-        const s = timeLeft % 60;
-        timerDisplay.innerText = `残り ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    }, 1000);
-}
+    const m = Math.floor(timeLeft / 60);
+    const s = timeLeft % 60;
+    timerDisplay.innerText = `残り ${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}, 1000);
 
 function checkAnswer() {
     const rawVal = document.getElementById('answerInput').value.trim();
     if (!rawVal) return alert("答えを入力してね！");
     const answers = rawVal.split('　');
     for (const val of answers) {
+        if (!val) continue;
         if (!/^[ぁ-んー]+$/.test(val)) return alert("ひらがなだけで入力してね！");
-        if (val.charAt(0) !== targetChar) return alert(`「${targetChar}」から始まる言葉にしてね！`);
+        if (val.charAt(0) !== targetChar) return alert(`「${val}」は「${targetChar}」から始まる言葉にしてね！`);
         if (val.endsWith('ん')) return alert("「ん」で終わる言葉はダメだよ！");
-        if (historyList.includes(val)) return alert("その言葉はもう使われてるよ！");
+        if (historyList.includes(val)) return alert("その言葉はもう使われているよ！");
     }
     document.getElementById('setupArea').style.display = "none";
     document.getElementById('drawArea').style.display = "block";
@@ -141,12 +158,10 @@ function setTool(t) {
     document.getElementById('eraserBtn').className = (t === 'eraser' ? 'tool-btn active-tool' : 'tool-btn');
     ctx.strokeStyle = (t === 'pen' ? "#000000" : "#FFFFFF");
     ctx.lineWidth = (t === 'pen' ? 3 : 30);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
 }
 
 function clearCanvas() {
-    if(confirm("描いた絵をすべて消しますか？")) {
+    if(confirm("白紙に戻しますか？")) {
         ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 }
@@ -156,10 +171,14 @@ const getPos = (e) => {
     const rect = canvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
+    // 画面上の表示サイズとキャンバスの内部解像度の比率を計算
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
 };
-canvas.onmousedown = canvas.ontouchstart = (e) => { 
-    drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); 
+
+canvas.onmousedown = canvas.ontouchstart = (e) => {
+    drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y);
     if(e.type === 'touchstart') e.preventDefault();
 };
 canvas.onmouseup = canvas.ontouchend = () => { drawing = false; };
@@ -171,28 +190,18 @@ function sendData() {
     if (isSubmitted) return;
     const ans = document.getElementById('answerInput').value.trim();
     const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
-    
     canvas.toBlob(blob => {
         const formData = new FormData();
-        formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName} さんがお絵描きしたよ！**` }));
-        formData.append('file', blob, `ans_${encodedAns}_id_${userId}_${token}.png`);
-        
-        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => { 
-            if (res.ok) { 
-                isSubmitted = true;
-                clearInterval(countdown);
-                alert("送信しました！Discordに戻ってください。");
-                window.close(); 
-            } else {
-                alert("送信に失敗しました。");
+        formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！` }));
+        formData.append('file', blob, `ans_${encodedAns}_id_${userId}.png`);
+        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
+            if (res.ok) {
+                isSubmitted = true; clearInterval(countdown);
+                alert("送信しました！この画面を閉じてDiscordに戻ってください。");
             }
-        }).catch(err => {
-            alert("Discordへの接続に失敗しました。");
         });
     }, 'image/png');
 }
-
-init();
 </script>
 </body>
 </html>
