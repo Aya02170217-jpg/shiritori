@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>お絵描きしりとりキャンバス</title>
 <style>
-/* 全体のレイアウト調整 */
 body { 
     background-color: #2c2f33; 
     color: white; 
@@ -13,26 +12,30 @@ body {
     font-family: sans-serif; 
     padding: 10px; 
     margin: 0; 
-    overflow-x: hidden; /* 横揺れ防止 */
+    overflow-x: hidden;
 }
 
+/* タイマーをタイトルの上に自然に配置 */
 #timerDisplay { 
-    position: fixed; top: 10px; right: 10px; 
-    background: #faa61a; color: #000; 
-    padding: 5px 10px; border-radius: 5px; 
-    font-weight: bold; font-size: 14px; z-index: 100; 
+    background: #faa61a; 
+    color: #000; 
+    padding: 8px 15px; 
+    border-radius: 5px; 
+    font-weight: bold; 
+    font-size: 16px; 
+    display: inline-block;
+    margin: 10px 0;
 }
 
-/* キャンバスをレスポンシブに */
 canvas { 
     background: #FFFFFF; 
     border: 5px solid #555; 
     cursor: crosshair; 
     border-radius: 10px; 
     display: none; 
-    touch-action: none; /* スマホで描いている時に画面が動かないようにする */
-    max-width: 90vw;    /* 画面幅の90%を超えない */
-    max-height: 50vh;   /* 画面高さの50%を超えない（ボタンが見えなくなるのを防ぐ） */
+    touch-action: none;
+    max-width: 90vw;
+    max-height: 50vh;
     width: 400px; 
     height: 400px;
 }
@@ -41,7 +44,7 @@ canvas {
 
 input { 
     padding: 12px; border-radius: 5px; border: none; 
-    width: 80%; max-width: 300px; /* スマホで幅いっぱいに */
+    width: 80%; max-width: 300px; 
     font-size: 16px; margin-bottom: 10px; color: #000; 
 }
 
@@ -52,6 +55,7 @@ button {
 
 .check-btn { background-color: #43b581; color: white; width: 80%; max-width: 300px; }
 .send-btn { background-color: #5865f2; color: white; }
+.send-btn:disabled { background-color: #4f545c; cursor: not-allowed; }
 .tool-btn { background-color: #4f545c; color: white; }
 .clear-btn { background-color: #dc3545; color: white; }
 .active-tool { background-color: #ffffff !important; color: #2c2f33 !important; border: 2px solid #5865f2; }
@@ -70,7 +74,6 @@ h2 { font-size: 1.2rem; padding: 0 10px; }
 <body>
 
 <div id="timerDisplay">残り 05:00</div>
-
 <h2 id="targetChar">読み込み中...</h2>
 
 <div id="setupArea">
@@ -95,7 +98,7 @@ h2 { font-size: 1.2rem; padding: 0 10px; }
 <button id="penBtn" class="tool-btn active-tool" onclick="setTool('pen')">ペン</button>
 <button id="eraserBtn" class="tool-btn" onclick="setTool('eraser')">消ゴム</button>
 <button class="clear-btn" onclick="clearCanvas()">全消去</button>
-<button class="send-btn" onclick="sendData()">送信！</button>
+<button id="finalSendBtn" class="send-btn" onclick="sendData()">送信！</button>
 </div>
 </div>
 
@@ -171,7 +174,6 @@ const getPos = (e) => {
     const rect = canvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    // 画面上の表示サイズとキャンバスの内部解像度の比率を計算
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
@@ -188,17 +190,40 @@ canvas.onmousemove = canvas.ontouchmove = (e) => {
 
 function sendData() {
     if (isSubmitted) return;
+    
+    // Webhook URLチェック
+    if (!WEBHOOK_URL || WEBHOOK_URL === "null") {
+        alert("エラー: Webhook URLが見つかりません。Botから送り直してください。");
+        return;
+    }
+
+    const btn = document.getElementById('finalSendBtn');
+    btn.innerText = "送信中...";
+    btn.disabled = true;
+
     const ans = document.getElementById('answerInput').value.trim();
     const encodedAns = Array.from(new TextEncoder().encode(ans)).map(b => b.toString(16).padStart(2, '0')).join('');
+    
     canvas.toBlob(blob => {
         const formData = new FormData();
         formData.append('payload_json', JSON.stringify({ content: `🎨 **${userName} さんがお絵描きしたよ！**\n答えがわかったらチャットに打ってね！` }));
         formData.append('file', blob, `ans_${encodedAns}_id_${userId}.png`);
-        fetch(WEBHOOK_URL, { method: 'POST', body: formData }).then(res => {
+
+        fetch(WEBHOOK_URL, { method: 'POST', body: formData })
+        .then(res => {
             if (res.ok) {
-                isSubmitted = true; clearInterval(countdown);
-                alert("送信しました！この画面を閉じてDiscordに戻ってください。");
+                isSubmitted = true;
+                clearInterval(countdown);
+                alert("送信しました！");
+                window.close();
+            } else {
+                throw new Error("送信失敗(Status:" + res.status + ")");
             }
+        })
+        .catch(err => {
+            alert("エラーが発生しました: " + err.message);
+            btn.innerText = "送信！";
+            btn.disabled = false;
         });
     }, 'image/png');
 }
